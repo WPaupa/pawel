@@ -137,3 +137,14 @@ Poziomy precedencji mogą być liczbami jednocyfrowymi, dla operatorów arytmety
 let h = k k + k k k;;
 ```
 liczba `h` sparsuje się jako `(k k) + ((k k) k)`.
+
+Precedencja operatorów nie ma znaczenia w pattern-matchingu. W konstrukcji match operatory są parsowane "od lewej", a konstruktory prefiksowe wiążą do końca matcha lub nawiasu. Na przykład:
+```
+let f x = match x with
+    Constructor a , b c => a
+    | Constructor2 (a , b , c) => a;;
+```
+zmatchuje `x` z konstruktorem `Constructor` na zmiennych `a`, `,`, `b` i `c` (co będzie prowadzić do błędów, skoro `,` jest zdefiniowany także jako operator) oraz z `Constructor2 (Cons a (Cons b c))`, gdzie `Cons` to syntaktyczny odpowiednik operatora `,` (czyli match jest intuicyjnie poprawny zgodnie z definicją użytą wyżej). 
+
+### Oczekiwane punkty
+36
