@@ -1,0 +1,45 @@
+entrypoints Program;
+
+Prog . Program ::= [Decl];
+
+DExp . Decl ::= "let" Idt [ TypeDecl ] "=" Exp;
+DLOp . Decl ::= "op left" Integer Idt "=" Idt;
+DRop . Decl ::= "op right" Integer Idt "=" Idt;
+DType . Decl ::= "type" Idt "of" [ Idt ] "=" [ Variant ];
+VarType . Variant ::= Idt [ Type1 ];
+
+TInt . Type1 ::= "Int";
+TVar . Type1 ::= Idt;
+TFunc . Type ::= Type1 "->" Type;
+TVariant . Type ::= Idt "of" [ Type1 ];
+coercions Type 1;
+
+EUnparsed . Exp ::= [ Exp1 ];
+EVar . Exp1 ::= Idt;
+EInt . Exp1 ::= Integer;
+ELet . Exp1 ::= "let" Idt [ TypeDecl ] "=" Exp "in" Exp;
+EIf  . Exp1 ::= "if" Exp "then" Exp "else" Exp;
+ELam . Exp1 ::= "λ" [ Idt ] "." Exp;
+EMatch . Exp1 ::= "match" Idt "with" [ MatchCase ];
+
+coercions Exp 1;
+
+Case . MatchCase ::= Match "=>" Exp;
+
+MVar  . Match1 ::= Idt;
+MList . Match  ::= [ Match1 ];
+coercions Match 1;
+
+TDVar  . TypeDecl ::= Idt;
+TDType . TypeDecl ::= "(" Idt ":" Type ")";
+
+token Idt (((letter | '_' | '\'' | '{' | '}') (letter | '_' | '\'' | '{' | '}' | digit) *) | ('[' | ']' | '_' | '\'' | '*' | '+' | '/' | '-' | '{' | '}' | '|' | '$' | '>' | '=' | '<' | ',' | '?' | ':' | '.' | '!')+);
+
+terminator Decl ";;";
+separator Variant "|";
+separator MatchCase "|";
+separator Type1 "";
+separator Idt "";
+separator Exp1 "";
+separator Match1 "";
+separator TypeDecl "";
