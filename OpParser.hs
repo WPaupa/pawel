@@ -1,7 +1,9 @@
+module OpParser where
+
 import Data.Map hiding (map)
 import AbsPawel
 
-ops :: Map Idt (Idt, Int, Int)
+ops :: Map Idt (Idt, Integer, Integer)
 ops = fromList [(Idt "+", (Idt "plus", 5, 1)), (Idt "/", (Idt "divide", 7, 1)), (Idt ",", (Idt "cons", 3, -1))]
 
 isOp :: Exp -> Bool

@@ -4,7 +4,7 @@ Prog . Program ::= [Decl];
 
 DExp . Decl ::= "let" Idt [ TypeDecl ] "=" Exp;
 DLOp . Decl ::= "op left" Integer Idt "=" Idt;
-DRop . Decl ::= "op right" Integer Idt "=" Idt;
+DROp . Decl ::= "op right" Integer Idt "=" Idt;
 DType . Decl ::= "type" Idt "of" [ Idt ] "=" [ Variant ];
 VarType . Variant ::= Idt [ Type1 ];
 

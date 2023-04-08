@@ -16,7 +16,7 @@ data Program = Prog [Decl]
 data Decl
     = DExp Idt [TypeDecl] Exp
     | DLOp Integer Idt Idt
-    | DRop Integer Idt Idt
+    | DROp Integer Idt Idt
     | DType Idt [Idt] [Variant]
   deriving (C.Eq, C.Ord, C.Show, C.Read)
 
