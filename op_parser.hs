@@ -1,26 +1,7 @@
 import Data.Map hiding (map)
+import AbsPawel
 
-newtype PName = Idt String deriving (Eq, Show, Ord)
-
-data Exp = EUnparsed [Exp]
-    | EVar PName
-    | ELet PName Exp Exp
-    | EIf Exp Exp Exp
-    | EMatch PName [ MatchCase ]
-    | EApp Exp Exp
-    | EAbs PName Exp
-    | EInt Int
-    deriving (Eq, Show)
-
-data MatchCase = Case Match Exp
-    deriving (Eq, Show)
-
-data Match = MVar PName
-    | MList [Match]
-    | MCons PName [Match]
-    deriving (Eq, Show)
-
-ops :: Map PName (PName, Int, Int)
+ops :: Map Idt (Idt, Int, Int)
 ops = fromList [(Idt "+", (Idt "plus", 5, 1)), (Idt "/", (Idt "divide", 7, 1)), (Idt ",", (Idt "cons", 3, -1))]
 
 isOp :: Exp -> Bool
@@ -31,11 +12,11 @@ isOpM :: Match -> Bool
 isOpM (MVar x) = member x ops
 isOpM _ = False
 
-name :: Exp -> PName
+name :: Exp -> Idt
 name (EVar x) = x
 name _ = error "name: not a name"
 
-nameM :: Match -> PName
+nameM :: Match -> Idt
 nameM (MVar x) = x
 nameM _ = error "nameM: not a name"
 
@@ -47,7 +28,7 @@ infixate (EApp e1 e2) = EApp (infixate e1) (infixate e2)
 infixate (EAbs x e) = EAbs x (infixate e)
 infixate (EInt x) = EInt x
 infixate (EVar x) = EVar x
-infixate (ELet x e1 e2) = ELet x (infixate e1) (infixate e2)
+infixate (ELet x tds e1 e2) = ELet x tds (infixate e1) (infixate e2)
 infixate (EIf e1 e2 e3) = EIf (infixate e1) (infixate e2) (infixate e3)
 infixate (EMatch x ms) = EMatch x (map (\(Case m e) -> Case (infixateMatch m) (infixate e)) ms)
 
