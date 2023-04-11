@@ -1,3 +1,5 @@
+module Preprocessor(getOps, getTypes, getInsts) where
+
 import AbsPawel
 import Data.Map hiding (map, filter)
 import OpParser

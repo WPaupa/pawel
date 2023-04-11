@@ -22,13 +22,13 @@ EIf  . Exp1 ::= "if" Exp "then" Exp "else" Exp;
 ELam . Exp1 ::= "λ" [ Idt ] "." Exp;
 EMatch . Exp1 ::= "match" Idt "with" [ MatchCase ];
 
-coercions Exp 1;
+_    . Exp1 ::= "(" Exp ")";
 
 Case . MatchCase ::= Match "=>" Exp;
 
 MVar  . Match1 ::= Idt;
 MList . Match  ::= [ Match1 ];
-coercions Match 1;
+_     . Match1 ::= "(" Match ")";
 
 TDVar  . TypeDecl ::= Idt;
 TDType . TypeDecl ::= "(" Idt ":" Type ")";

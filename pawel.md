@@ -61,10 +61,11 @@ itd.
 ```
 Kolejność generowanych przeładowań jest zgodna z kolejnością przeładowań używanych wewnętrznie funkcji, i idzie "od lewej", czyli najpierw generuje wszystkie przeładowania dla pierwszego wariantu najbardziej lewej funkcji, potem drugiego itd. Funkcje przeładowane mogą być rekurencyjne, ale przy wywołaniu rekurencyjnym widoczne jest tylko obecne przeładowanie oraz przeładowania zdefiniowane wcześniej. Przeładowana funkcja rekurencyjna dokładnie tak samo jest definiowana w kilku wersjach, przy czym jedna z wersji jest rekurencyjna. Na przykład:
 ```
+op right 5 ,, = ConsP;;
 let piecewiseAdd (x : Int) (y : Int) = x + y;;
-let piecewiseAdd (x : List of Int) (y : List of Int) = let z = x, y in 
+let piecewiseAdd (x : List of Int) (y : List of Int) = let z = x ,, y in 
     match z with
-        (h1, t1) , (h2, t2) => (piecewiseAdd (h1, h2)) , (piecewiseAdd (t1, t2))
+        (h1, t1) ,, (h2, t2) => (piecewiseAdd h1 h2) , (piecewiseAdd t1 t2)
         | _ => Empty;;
 ```
 W programie stworzy dwa warianty funkcji `piecewiseAdd`, pierwszy trywialny, a drugi wołający i pierwszy i rekurencyjnie siebie samego.
@@ -96,8 +97,8 @@ W tym kodzie widać również przykład tego, jak można użyć konstrukcji `op`
 ### Konsekwencje aplikacji
 Argumenty konstruktora aplikowanego typu wariantowego muszą być odpowiedniego typu. Na przykład w kodzie:
 ```
-type Pair of a b = Cons a b;;
-let g = Cons (λ x . 1) (λ x . x 1);;
+type Pair of a b = ConsP a b;;
+let g = ConsP (λ x . 1) (λ x . x 1);;
 let gf f = g f;;
 ```
 `g` się otypuje poprawnie, ale `gf` już nie. Oznacza to, że pomimo tego, że wszystko jest w Pawle traktowane jako funkcja, to i tak nie ma poprawności $\eta$-redukcji.
@@ -119,7 +120,7 @@ Wyrażenie `if e1 then e2 else e3` jest de facto aliasem na funkcję `ifte e1 (�
 
 Do porównywania obiektów typu `Int` istnieją operatory `==`, `>`, `>=`, `<=` i `<`, wyliczające się do 1 lub 0 w standardowy sposób.
 ## Działania arytmetyczne
-Działania arytmetyczne +, *, - i / są domyślnie przeładowane dla typu `Int` w standardowy sposób, ale można je przeładować dla dowolnych typów.
+Działania arytmetyczne +, *, - i / są domyślnie przeładowane dla typu `Int` w standardowy sposób, ale można je przeładować dla dowolnych typów. Składniowo te działania są operatorowymi aliasami dla funkcji `{+}`, `*`, `{-}` i `{/}` z priorytetami jak w Haskellu. 
 ### Kolejność wykonywania działań
 Bazowo ciąg aplikacji jest parsowany jako lista, w której potem operatory są zamieniane syntaktycznie na funkcje zgodnie z precedencją. Na przykład funkcja `h` w kodzie:
 ```
@@ -146,5 +147,99 @@ let f x = match x with
 ```
 zmatchuje `x` z konstruktorem `Constructor` na zmiennych `a`, `,`, `b` i `c` (co będzie prowadzić do błędów, skoro `,` jest zdefiniowany także jako operator) oraz z `Constructor2 (Cons a (Cons b c))`, gdzie `Cons` to syntaktyczny odpowiednik operatora `,` (czyli match jest intuicyjnie poprawny zgodnie z definicją użytą wyżej). 
 
+# Wyjaśnienia
+## Gramatyka
+Formalna gramatyka języka w formacie LBNF:
+```
+entrypoints Program;
+
+Prog . Program ::= [Decl];
+
+DExp . Decl ::= "let" Idt [ TypeDecl ] "=" Exp;
+DLOp . Decl ::= "op left" Integer Idt "=" Idt;
+DROp . Decl ::= "op right" Integer Idt "=" Idt;
+DType . Decl ::= "type" Idt "of" [ Idt ] "=" [ Variant ];
+VarType . Variant ::= Idt [ Type1 ];
+
+TInt . Type1 ::= "Int";
+TVar . Type1 ::= Idt;
+TFunc . Type ::= Type1 "->" Type;
+TVariant . Type ::= Idt "of" [ Type1 ];
+coercions Type 1;
+
+EUnparsed . Exp ::= [ Exp1 ];
+EVar . Exp1 ::= Idt;
+EInt . Exp1 ::= Integer;
+ELet . Exp1 ::= "let" Idt [ TypeDecl ] "=" Exp "in" Exp;
+EIf  . Exp1 ::= "if" Exp "then" Exp "else" Exp;
+ELam . Exp1 ::= "λ" [ Idt ] "." Exp;
+EMatch . Exp1 ::= "match" Idt "with" [ MatchCase ];
+
+_    . Exp1 ::= "(" Exp ")";
+
+Case . MatchCase ::= Match "=>" Exp;
+
+MVar  . Match1 ::= Idt;
+MList . Match  ::= [ Match1 ];
+_     . Match1 ::= "(" Match ")";
+
+TDVar  . TypeDecl ::= Idt;
+TDType . TypeDecl ::= "(" Idt ":" Type ")";
+
+token Idt (((letter | '_' | '\'' | '{' | '}') (letter | '_' | '\'' | '{' | '}' | digit) *) | ('[' | ']' | '_' | '\'' | '*' | '+' | '/' | '-' | '{' | '}' | '|' | '$' | '>' | '=' | '<' | ',' | '?' | ':' | '.' | '!')+);
+
+terminator Decl ";;";
+separator Variant "|";
+separator MatchCase "|";
+separator Type1 "";
+separator Idt "";
+separator Exp1 "";
+separator Match1 "";
+separator TypeDecl "";
+```
+W tej gramatyce pojawiają się konflikty shift/reduce. Wszystkie te konflikty są przy regułach przypadków brzegowych dla list:
+```
+[ MatchCase ] -> 
+[ MatchCase ] -> MatchCase
+[ Exp1 ] -> 
+```
+Priorytetyzacja shift nad reduce w poprawny sposób sprawia, że listy nie są kończone przedwcześnie, więc wszystkie konflikty są rozwiązywane w poprawny sposób. 
+## Przykłady
+### Potęgowanie
+```
+let id x = x;;
+let multiply n m = n * m;;
+let {*} (x : Int -> Int) (y : Int) = λ a . (x a) * y;;
+let {+} (x : Int -> Int) (y : Int) = λ a . (x a) + y;;
+
+let power1 n m = if m then n * (power n (m - 1)) else 1;;
+let power2 n m = m (multiply n) 1;;
+let power3 n m = m (id * n) 1;;
+let power4 n m = m n;;
+```
+To, czy typ wynikowy ostatniego przykładu będzie zgodny z typem `Int`, zależy od wersji języka.
+### Rekurencyjne przeładowywanie
+Jako że wiązanie przeładowań funkcji jest statyczne, to rekurencyjna funkcja przeładowana musi zawsze wołać ten sam wariant siebie w tym samym miejscu. Na przykład **niepoprawnym** kodem jest:
+```
+let {*} (x : a -> b) (y : a -> b) = λ a . (x a) * (y a);;
+let e = (λ x y . 5) * (λ x y . 3);;
+```
+Bo w wyrażeniu `e` zostanie dopasowane napisane wyżej przeładowanie funkcji `*`, w którym natomiast znowu zostanie dopasowane ono samo (rekurencyjnie). Taka rekurencja nie ma warunku początkowego, bo funkcja `{*}` napisana w kodzie jest związana ze samą sobą, więc nie może być związana z mnożeniem obiektów typu `Int`. Poprawnym przykładem rekurencyjnego przeładowania jest funkcja `piecewiseAdd` z rozdziału Przeładowywanie.
+### Silnia
+Silnię oczywiście można napisać tak jak w OCamlu, ale niżej przedstawiono bardziej Pawłowy sposób pisania silni.
+```
+let fst x = match x with (a ,, b) => a;;
+let snd x = match x with (a ,, b) => b;;
+let foldp f x = match x with (a ,, b) => f a b;;
+
+let {$} f x = f x;;
+op right 0 $ = {$};;
+
+let pairFunctions f g = λ x . (f x) ,, (g x);;
+
+let factorial n = snd $ n (pairFunctions (id + 1) (foldp {*})) (0 ,, 1);;
+```
+## Kod
+Kod prezentowany w tym dokumencie nie korzysta z założeń istnienia wcześniejszych bibliotek, ale niektóre fragmenty korzystają z funkcji, przeładowań i operatorów zdefiniowanych w poprzednich fragmentach. W języku Paweł planowana jest biblioteka standardowa, do której będą należeć niektóre ze zdefiniowanych w tym dokumencie funkcji.
 ### Oczekiwane punkty
 36
