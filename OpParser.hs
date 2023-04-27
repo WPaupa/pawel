@@ -27,7 +27,7 @@ first (x, _, _) = x
 infixate :: Exp -> Exp
 infixate (EUnparsed es) = infixateOps es
 infixate (EApp e1 e2) = EApp (infixate e1) (infixate e2)
-infixate (EAbs x e) = EAbs x (infixate e)
+infixate (ELam x e) = ELam x (infixate e)
 infixate (EInt x) = EInt x
 infixate (EVar x) = EVar x
 infixate (ELet x tds e1 e2) = ELet x tds (infixate e1) (infixate e2)

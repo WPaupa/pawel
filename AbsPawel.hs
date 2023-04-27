@@ -35,7 +35,6 @@ data Exp
     | ELam [Idt] Exp
     | EMatch Idt [MatchCase]
     | EApp Exp Exp
-    | EAbs Idt Exp
   deriving (C.Eq, C.Ord, C.Show, C.Read)
 
 data MatchCase = Case Match Exp
