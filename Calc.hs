@@ -19,6 +19,12 @@ coerce :: Either Integer ExpBound -> ExpBound
 coerce (Left x) = EBInt x
 coerce (Right x) = x
 
+churchify :: Integer -> ExpBound
+churchify n = let
+    church 0 f x = x
+    church n f x = f (church (n-1) f x) in
+    EBLam [Idt "f", Idt "x"] (church n (\q -> EBApp (EBVar $ Idt "f") q) (EBVar $ Idt "x"))
+
 substitute :: ExpBound -> Reader BEnv ExpBound
 substitute (EBVar x) = do
     env <- ask
@@ -32,14 +38,14 @@ substitute (EBIf e1 e2 e3) = do
     e3' <- substitute e3
     return $ EBIf e1' e2' e3'
 substitute (EBLet x t e1 e2) = do
-    e1' <- substitute e1
+    e1' <- local (inserts $ map (\x -> (untype x, EBVar $ untype x)) t) $ substitute e1
     e2' <- local (insert x e1') (substitute e2)
     return $ EBLet x t e1' e2'
 substitute (EBLam [] e) = do
     e' <- substitute e
     return e'
 substitute (EBLam xs e) = do
-    e' <- substitute e
+    e' <- local (inserts $ map (\x -> (x, EBVar x)) xs) $ substitute e
     return $ EBLam xs e'
 substitute (EBMatch x cs) = do
     cs' <- mapM (\(CaseBound m e) -> do
@@ -57,6 +63,9 @@ substitute (EBArith x y op) = do
     x' <- substitute x
     y' <- substitute y
     return $ EBArith x' y' op
+substitute (EBVariant name ts) = do
+    ts' <- mapM substitute ts
+    return $ EBVariant name ts'
 
 calc :: ExpBound -> Reader BEnv (Either Integer ExpBound)
 calc (EBVar x) = do
@@ -79,8 +88,9 @@ calc (EBApp e1 e2) = do
     e1' <- calc e1
     e2' <- calc e2
     case e1' of
-        Left x -> error "Not implemented"
+        Left x -> calc $ EBApp (churchify x) (coerce e2')
         Right (EBLam (h:t) e) -> local (insert h $ coerce e2') $ calc $ runReader (substitute $ EBLam t e) $ fromList [(h, coerce e2')]
+        Right (EBVariant name vs) -> calc $ EBVariant name $ map (\v -> EBApp v (coerce e2')) vs
         Right e -> return $ Right $ EBApp e $ coerce e2'
 calc (EBOverload [x]) = calc x
 calc (EBOverload xs) = mapM calc xs >>= return . Right . EBOverload . map coerce
@@ -121,15 +131,18 @@ cc x = runReader (calc x) empty
 
 aenv = inserts [(Idt "{-}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (-)), 
                 (Idt "{*}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (*)),
+                (Idt "{+}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (+)), 
+                (Idt "{/}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> x `div` y)),
                 (Idt "id", EBLam [Idt "x"] $ EBVar $ Idt "x")] empty
 
 bb x fname = runReader (bind x) (insert (Idt fname) (EBVar $ Idt fname) aenv)
+bba x fname aenv = runReader (bind x) (insert (Idt fname) (EBVar $ Idt fname) aenv)
 
 x = EVar $ Idt "x"
 xm1 = EApp (EApp (EVar $ Idt "{-}") x) (EInt 1) 
 fact = ELam [Idt "x"] $ EIf x (EApp (EApp (EVar $ Idt "{*}") x) (EApp (EVar $ Idt "fact") xm1)) (EInt 1)
 
-extend x fname env = insert (Idt fname) (bb x fname) env
+extend x fname env = insert (Idt fname) (bba x fname env) env
 doe y x fname env = runReader (calc (bb y "abc'")) (extend x fname env)
 
 fact5 = doe (EApp fact $ EInt 5) fact "fact" aenv
