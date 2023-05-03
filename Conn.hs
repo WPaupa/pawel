@@ -28,8 +28,8 @@ bop = [(Idt "+", (Idt "{+}", 5, 1)),
        (Idt ",", (Idt "Cons", 3, -1))]
 
 -- getInts :: Map.Map Idt (Either Integer ExpBound) -> Map.Map Idt Integer
--- getInts = (Map.map fromLeft) . (Map.filter isLeft) . (Map.map f) where
-getInts = id where
+getInts = (Map.map fromLeft) . (Map.filter isLeft) . (Map.map f) where
+-- getInts = id where
     f (Right (EBOverload [])) = Right $ EBVar $ Idt "_"
     f (Right (EBOverload ((EBInt x):xs))) = Left x
     f (Right (EBOverload (x:xs))) = f (Right (EBOverload xs))

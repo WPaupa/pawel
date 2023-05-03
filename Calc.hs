@@ -31,6 +31,12 @@ substitute (EBVar x) = do
     case lookup x env of
         Nothing -> return $ EBVar x
         Just x -> return x
+substitute (EOVar pos x) = do
+    env <- ask
+    case lookup x env of
+        Nothing -> return $ EOVar pos x
+        Just (EBOverload xs) -> return $ xs !! pos
+        Just x -> return x
 substitute (EBInt x) = return $ EBInt x
 substitute (EBIf e1 e2 e3) = do
     e1' <- substitute e1
@@ -67,6 +73,12 @@ substitute (EBVariant name ts) = do
     ts' <- mapM substitute ts
     return $ EBVariant name ts'
 
+bubbleOverload :: [ExpBound] -> Reader BEnv (Either Integer ExpBound)
+bubbleOverload xs = fmap (Right . EBOverload) $ mapM ((fmap coerce) . calc) xs
+
+allPairs :: [a] -> [b] -> [(a,b)]
+allPairs l m = [(x, y) | x <- l, y <- m]
+
 calc :: ExpBound -> Reader BEnv (Either Integer ExpBound)
 calc (EBVar x) = do
     env <- ask
@@ -80,6 +92,7 @@ calc (EBIf e1 e2 e3) = do
     case e1' of
         Left 0 -> calc e3
         Left _ -> calc e2
+        Right (EBOverload xs) -> bubbleOverload xs
         Right e1'' -> return $ Right $ EBIf e1'' e2 e3
 calc (EBLet x t e1 e2) = local (insert x $ EBLam (map untype t) e1) (calc e2)
 calc (EBLam [] e) = calc e
@@ -89,6 +102,7 @@ calc (EBApp e1 e2) = do
     e2' <- calc e2
     case e1' of
         Left x -> calc $ EBApp (churchify x) (coerce e2')
+        Right (EBOverload xs) -> bubbleOverload xs
         Right (EBLam (h:t) e) -> local (insert h $ coerce e2') $ calc $ runReader (substitute $ EBLam t e) $ fromList [(h, coerce e2')]
         Right (EBVariant name vs) -> calc $ EBVariant name $ map (\v -> EBApp v (coerce e2')) vs
         Right e -> return $ Right $ EBApp e $ coerce e2'
@@ -108,6 +122,12 @@ calc (EBArith x y (AriOp f)) = do
     y' <- calc y
     case (x', y') of
         (Left x'', Left y'') -> return $ Left $ f x'' y''
+        (Right (EBOverload xs), Left y'') -> fmap (Right . EBOverload) $ 
+            mapM (\x'' -> fmap coerce (calc $ EBArith x'' (EBInt y'') (AriOp f))) xs
+        (Left x'', Right (EBOverload ys)) -> fmap (Right . EBOverload) $ 
+            mapM (\y'' -> fmap coerce (calc $ EBArith (EBInt x'') y'' (AriOp f))) ys
+        (Right (EBOverload xs), Right (EBOverload ys)) -> fmap (Right . EBOverload) $
+            mapM (\(x'', y'') -> fmap coerce (calc $ EBArith x'' y'' (AriOp f))) $ allPairs xs ys
         _ -> return $ Right $ EBArith x y (AriOp f)
 calc (EOVar pos x) = do
     env <- ask
@@ -133,7 +153,11 @@ aenv = inserts [(Idt "{-}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x")
                 (Idt "{*}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (*)),
                 (Idt "{+}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (+)), 
                 (Idt "{/}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> x `div` y)),
-                (Idt "id", EBLam [Idt "x"] $ EBVar $ Idt "x")] empty
+                (Idt "{>}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x > y then 1 else 0)),
+                (Idt "{<}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x < y then 1 else 0)),
+                (Idt "{>=}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x >= y then 1 else 0)),
+                (Idt "{<=}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x <= y then 1 else 0)),
+                (Idt "{==}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x == y then 1 else 0))] empty
 
 bb x fname = runReader (bind x) (insert (Idt fname) (EBVar $ Idt fname) aenv)
 bba x fname aenv = runReader (bind x) (insert (Idt fname) (EBVar $ Idt fname) aenv)
