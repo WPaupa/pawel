@@ -72,9 +72,23 @@ substitute (EBArith x y op) = do
 substitute (EBVariant name ts) = do
     ts' <- mapM substitute ts
     return $ EBVariant name ts'
+substitute (EBCons f) = return $ EBCons f
+
+flattenExp :: [ExpBound] -> ExpBound
+flattenExp [x] = x
+flattenExp ((EBOverload xs):t) = case flattenExp t of
+    EBOverload ys -> EBOverload $ xs ++ ys
+    y -> EBOverload $ xs ++ [y]
+flattenExp (x:t) = case flattenExp t of
+    EBOverload ys -> EBOverload $ x:ys
+    y -> EBOverload $ [x, y]
+
+uncoerce :: ExpBound -> Either Integer ExpBound
+uncoerce (EBInt x) = Left x
+uncoerce x = Right x
 
 bubbleOverload :: [ExpBound] -> Reader BEnv (Either Integer ExpBound)
-bubbleOverload xs = fmap (Right . EBOverload) $ mapM ((fmap coerce) . calc) xs
+bubbleOverload xs = fmap (uncoerce . flattenExp) $ mapM ((fmap coerce) . calc) xs
 
 allPairs :: [a] -> [b] -> [(a,b)]
 allPairs l m = [(x, y) | x <- l, y <- m]
@@ -85,14 +99,14 @@ calc (EBVar x) = do
     case lookup x env of
         Nothing -> return $ Right $ EBVar x
         Just (EBInt x) -> return $ Left x
-        Just x -> return $ Right x
+        Just x -> calc x
 calc (EBInt x) = return $ Left x
 calc (EBIf e1 e2 e3) = do
     e1' <- calc e1
     case e1' of
         Left 0 -> calc e3
         Left _ -> calc e2
-        Right (EBOverload xs) -> bubbleOverload xs
+        Right (EBOverload xs) -> bubbleOverload $ map (\x -> EBIf x e2 e3) xs
         Right e1'' -> return $ Right $ EBIf e1'' e2 e3
 calc (EBLet x t e1 e2) = local (insert x $ EBLam (map untype t) e1) (calc e2)
 calc (EBLam [] e) = calc e
@@ -102,31 +116,43 @@ calc (EBApp e1 e2) = do
     e2' <- calc e2
     case e1' of
         Left x -> calc $ EBApp (churchify x) (coerce e2')
-        Right (EBOverload xs) -> bubbleOverload xs
+        Right (EBOverload xs) -> bubbleOverload $ map (\x -> EBApp x (coerce e2')) xs
+        Right (EBLam [] e) -> calc (EBApp e (coerce e2'))
         Right (EBLam (h:t) e) -> local (insert h $ coerce e2') $ calc $ runReader (substitute $ EBLam t e) $ fromList [(h, coerce e2')]
         Right (EBVariant name vs) -> calc $ EBVariant name $ map (\v -> EBApp v (coerce e2')) vs
+        Right (EBCons (FWCons f)) -> calc $ f (coerce e2')
         Right e -> return $ Right $ EBApp e $ coerce e2'
 calc (EBOverload [x]) = calc x
-calc (EBOverload xs) = mapM calc xs >>= return . Right . EBOverload . map coerce
+calc (EBOverload xs) = mapM calc xs >>= return . uncoerce . flattenExp . map coerce
 calc (EBVariant x xs) = mapM calc xs >>= return . Right . EBVariant x . map coerce
 calc (EBMatch x []) = error "Match error"
 calc (EBMatch x (CaseBound m e:t)) = do
     env <- ask
     case lookup x env of
-        Just (EBVariant y ys) -> case match y m ys of
-            Nothing -> calc $ EBMatch x t
-            Just kvs -> local (inserts kvs) (calc e)
-        _ -> return $ Right $ EBMatch x (CaseBound m e:t)
+        Just x' -> do
+            xv <- calc x'
+            calcMatch (coerce xv)
+        Nothing -> return $ Right $ EBMatch x (CaseBound m e:t)
+    where 
+        calcMatch x' =
+            case x' of
+                EBVariant y ys -> case match y m ys of
+                    Nothing -> calc $ EBMatch x t
+                    Just kvs -> local (inserts kvs) (calc e)
+                EBOverload xs -> fmap (uncoerce . flattenExp) $ mapM ((fmap coerce) . calcMatch) xs
+                x'' -> case m of
+                    MVar y -> local (insert y x'') (calc e)
+                    _ -> return $ Right $ EBMatch x (CaseBound m e:t)
 calc (EBArith x y (AriOp f)) = do
     x' <- calc x
     y' <- calc y
     case (x', y') of
         (Left x'', Left y'') -> return $ Left $ f x'' y''
-        (Right (EBOverload xs), Left y'') -> fmap (Right . EBOverload) $ 
+        (Right (EBOverload xs), Left y'') -> fmap (uncoerce . flattenExp) $ 
             mapM (\x'' -> fmap coerce (calc $ EBArith x'' (EBInt y'') (AriOp f))) xs
-        (Left x'', Right (EBOverload ys)) -> fmap (Right . EBOverload) $ 
+        (Left x'', Right (EBOverload ys)) -> fmap (uncoerce . flattenExp) $ 
             mapM (\y'' -> fmap coerce (calc $ EBArith (EBInt x'') y'' (AriOp f))) ys
-        (Right (EBOverload xs), Right (EBOverload ys)) -> fmap (Right . EBOverload) $
+        (Right (EBOverload xs), Right (EBOverload ys)) -> fmap (uncoerce . flattenExp) $
             mapM (\(x'', y'') -> fmap coerce (calc $ EBArith x'' y'' (AriOp f))) $ allPairs xs ys
         _ -> return $ Right $ EBArith x y (AriOp f)
 calc (EOVar pos x) = do
@@ -135,6 +161,7 @@ calc (EOVar pos x) = do
         Nothing -> return $ Right $ EOVar pos x
         Just (EBOverload xs) -> calc $ xs !! pos
         Just x -> return $ Right x
+calc (EBCons f) = return $ Right $ EBCons f
 
 match :: Idt -> Match -> [ExpBound] -> Maybe [(Idt, ExpBound)]
 match q (MVar x) l = Just [(x, EBVariant q l)]
@@ -147,8 +174,6 @@ match' (MVar x) y = Just [(x, y)]
 match' (MCons x xs) (EBVariant y ys) = if x == y then match y (MCons x xs) ys else Nothing
 match' _ _ = Nothing
 
-cc x = runReader (calc x) empty
-
 aenv = inserts [(Idt "{-}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (-)), 
                 (Idt "{*}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (*)),
                 (Idt "{+}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (+)), 
@@ -158,6 +183,8 @@ aenv = inserts [(Idt "{-}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x")
                 (Idt "{>=}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x >= y then 1 else 0)),
                 (Idt "{<=}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x <= y then 1 else 0)),
                 (Idt "{==}", EBLam [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x == y then 1 else 0))] empty
+
+cc x = runReader (calc x) aenv
 
 bb x fname = runReader (bind x) (insert (Idt fname) (EBVar $ Idt fname) aenv)
 bba x fname aenv = runReader (bind x) (insert (Idt fname) (EBVar $ Idt fname) aenv)

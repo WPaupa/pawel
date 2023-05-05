@@ -13,6 +13,7 @@ data ExpBound
     | EOVar Int Idt
     | EBInt Integer
     | EBVariant Idt [ExpBound]
+    | EBCons FWrapper
     | EBIf ExpBound ExpBound ExpBound
     | EBLet Idt [TypeDecl] ExpBound ExpBound
     | EBLam [Idt] ExpBound
@@ -20,7 +21,17 @@ data ExpBound
     | EBApp ExpBound ExpBound
     | EBOverload [ExpBound]
     | EBArith ExpBound ExpBound AriOp
-  deriving (Eq, Ord, Show, Read)
+    deriving (Eq, Ord, Show, Read)
+
+data FWrapper = FWCons (ExpBound -> ExpBound)
+instance Show FWrapper where
+    show (FWCons f) = show (f $ EBInt 0)
+instance Eq FWrapper where
+    (FWCons f) == (FWCons g) = f (EBInt 0) == g (EBInt 0)
+instance Ord FWrapper where
+    compare (FWCons f) (FWCons g) = compare (f $ EBInt 0) (g $ EBInt 0)
+instance Read FWrapper where
+    readsPrec _ _ = []
 
 untype :: TypeDecl -> Idt
 untype (TDVar x) = x
