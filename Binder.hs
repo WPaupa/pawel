@@ -16,12 +16,28 @@ data ExpBound
     | EBCons FWrapper
     | EBIf ExpBound ExpBound ExpBound
     | EBLet Idt [TypeDecl] ExpBound ExpBound
-    | EBLam [Idt] ExpBound
+    | EBLam BEnv [Idt] ExpBound
     | EBMatch Idt [MatchCaseBound]
     | EBApp ExpBound ExpBound
     | EBOverload [ExpBound]
     | EBArith ExpBound ExpBound AriOp
-    deriving (Eq, Ord, Show, Read)
+    deriving (Eq, Ord, Read)
+
+instance Show ExpBound where
+    show (EBVar x) = show x
+    show (EOVar n x) = show x ++ "_" ++ show n
+    show (EBInt x) = show x
+    show (EBVariant x []) = show x
+    show (EBVariant x xs) = show x ++ "(" ++ (foldl (\a b -> a ++ ", " ++ b) (show $ head xs) (map show $ tail xs)) ++ ")"
+    show (EBCons x) = show x
+    show (EBIf e1 e2 e3) = "if " ++ show e1 ++ " then " ++ show e2 ++ " else " ++ show e3
+    show (EBLet x tds e1 e2) = "let " ++ show x ++ " = " ++ show e1 ++ " in " ++ show e2
+    show (EBLam env [] e) = "(\\_->" ++ show e ++ ")"
+    show (EBLam env xs e) = "(\\" ++ (foldl (\a b -> a ++ ", " ++ b) (show $ head xs) (map show $ tail xs)) ++ " -> " ++ show e ++ ")"
+    show (EBMatch x cs) = "match " ++ show x ++ " with " ++ (foldl (\a b -> a ++ " | " ++ b) (show $ head cs) (map show $ tail cs))
+    show (EBApp e1 e2) = show e1 ++ " " ++ show e2
+    show (EBOverload xs) = "overload " ++ (foldl (\a b -> a ++ " | " ++ b) (show $ head xs) (map show $ tail xs))
+    show (EBArith e1 e2 op) = show e1 ++ " " ++ show op ++ " " ++ show e2
 
 data FWrapper = FWCons (ExpBound -> ExpBound)
 instance Show FWrapper where
@@ -120,13 +136,17 @@ bind (EApp e1 e2) = let
             _ -> bind2 e1';
         }
 bind (ELam xs e) = do
+    env <- ask
     e' <- local (inserts $ map (\x -> (x, EBVar x)) xs) $ bind e
     case e' of
-        EBOverload es -> return $ EBOverload $ map (\e -> EBLam xs e) es
-        _ -> return $ EBLam xs e'
+        EBOverload es -> return $ EBOverload $ map (\e -> EBLam env xs e) es
+        _ -> return $ EBLam env xs e'
 bind (EMatch x mcs) = let
+    bindMatch (MVar x) = insert x (EBVar x)
+    bindMatch (MCons x []) = id
+    bindMatch (MCons x (h:t)) = bindMatch h . bindMatch (MCons x t) 
     bindMC (Case p e) = do
-        e' <- bind e
+        e' <- local (bindMatch p) $ bind e
         case e' of
             EBOverload es -> return $ CaseBoundOverload $ map (\e -> CaseBound p e) es
             _ -> return $ CaseBound p e'
