@@ -102,27 +102,7 @@ mgu t1 t2                      =  throwError $ "types do not unify: " ++ show t1
                                   " vs. " ++ show t2
 varBind :: String -> Type -> TI Subst
 varBind u t  | t == TVar u           =  return nullSubst
-             | u `Set.member` ftv t  =  intify id u t
              | otherwise             =  return (Map.singleton u t)
-
-intify :: (Type -> Type) -> String -> Type -> TI Subst 
-intify f u (TFun l r) | u `Set.member` ftv l = do s1 <- mgu (TVar u) (f TInt) 
-                                                  s2 <- mgu (apply s1 l) (apply s1 r)
-                                                  s3 <- endo (apply (s1 `composeSubst` s2) l)
-                                                  return ((s1 `composeSubst` s2) `composeSubst` s3)
-                      | otherwise            = intify (\t -> f (TFun l t)) u r 
-intify f u typ@(TVar v) = intify' (f typ) u where
-        intify' (TVar _) u   = return (Map.singleton u TInt)
-        intify' (TFun l r) u = do s1 <- intify' r u 
-                                  s2 <- mgu (apply s1 l) (apply s1 r)
-                                  return (s1 `composeSubst` s2)
-
-endo :: Type -> TI Subst
-endo TInt = return nullSubst
-endo (TFun l r) = mgu l r 
-endo (TVar p) = do 
-    tv <- newTyVar "f"
-    return (Map.singleton p (TFun tv tv))
 
 tiLit :: Lit -> TI (Subst, Type)
 tiLit (LInt _)   =  return (nullSubst, TInt)
