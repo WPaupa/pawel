@@ -8,8 +8,6 @@ import Control.Monad.State
 import qualified Text.PrettyPrint as PP
 import AbsPawel
 
-data Scheme  =  Scheme [Idt] Type deriving (Eq,Show)
-
 class Types a where
     ftv    ::  a -> Set.Set Idt
     apply  ::  Subst -> a -> a
@@ -40,8 +38,6 @@ nullSubst  =   Map.empty
 composeSubst         :: Subst -> Subst -> Subst
 composeSubst s1 s2   = (Map.map (apply s1) s2) `Map.union` s1
 
-newtype TypeEnv = TypeEnv (Map.Map Idt Scheme)
-
 remove                    ::  TypeEnv -> Idt -> TypeEnv
 remove (TypeEnv env) var  =  TypeEnv (Map.delete var env)
 instance Types TypeEnv where
@@ -67,12 +63,6 @@ newTyVar prefix =
         put s{tiSupply = tiSupply s + 1}
         return (TVar $ Idt (prefix ++ show (tiSupply s)))
 
-newVar :: String -> TI Idt
-newVar prefix =
-    do  s <- get
-        put s{tiSupply = tiSupply s + 1}
-        return (Idt (prefix ++ show (tiSupply s)))
-
 instantiate :: Scheme -> TI Type
 instantiate (Scheme vars t) = do  nvars <- mapM (\ _ -> newTyVar "a") vars
                                   let s = Map.fromList (zip vars nvars)
@@ -92,8 +82,11 @@ mgu TInt (TFunc (TFunc t1 t2) b) =  do  s1 <- mgu (TFunc t1 t2) b
 mgu TInt (TFunc (TVar a) b)    =  mgu (TVar a) b
 mgu t1 TInt                    =  mgu TInt t1
 mgu (TVariant (Idt name) types) (TVariant (Idt name') types') 
-    | name == name' = foldM (\s (t1, t2) -> do {s1 <- mgu t1 t2; return (s `composeSubst` s1)}) nullSubst (zip types types')
-    | otherwise = throwError $ "TypeError, expected " ++ name ++ ", got " ++ name'
+    | length types == length types' = foldM (\s (t1, t2) -> do {
+            s1 <- mgu t1 t2; 
+            return (s `composeSubst` s1)
+        }) nullSubst (zip types types')
+    | otherwise = throwError $ "TypeError, expected " ++ (show $ length types) ++ "arguments, got " ++ (show $ length types')
 mgu (TVariant name types) (TFunc t1 t2) = throwError "TypeError: variant application not yet implemented"
 mgu t1 t2                      =  throwError $ "types do not unify: " ++ show t1 ++ 
                                   " vs. " ++ show t2
@@ -120,18 +113,22 @@ ti (TypeEnv env) (EOVar pos n@(Idt n')) =
        Just sigma  ->  do  t <- instantiate sigma
                            return (nullSubst, t)
 ti _ (EBInt n) = (return (nullSubst, TInt))
-ti env (EBVariant name es) = -- TODO dostawanie środowiska z konstruktorami
+ti env@(TypeEnv env') (EBVariant name es) = 
     let f (s, ts) e = do {
         (s', t') <- ti (apply s env) e;
         return (s' `composeSubst` s, (t':ts))
      } in
-    foldM f (nullSubst, []) es >>= \(s, ts) -> return (s, TVariant name $ reverse ts)
-ti (TypeEnv env) (EBCons (FWCons f)) = do
-    v <- newVar "a"
-    tv <- newTyVar "a"
-    let env' = TypeEnv (env `Map.union` (Map.singleton v (Scheme [] tv)))
-    (s1, t1) <- ti env' (f $ EBVar v)
-    return (s1, TFunc (apply s1 tv) t1)
+    case Map.lookup name env' of
+        Nothing -> throwError $ "unbound variant constructor: " ++ show name
+        Just sigma -> do 
+            t <- instantiate sigma
+            case t of 
+                (TVariant name' ts') -> do 
+                    (s, ts) <- foldM f (nullSubst, []) es
+                    s' <- mgu (TVariant name ts) t
+                    return (s' `composeSubst` s, apply s' t)
+                _ -> throwError $ "expected variant constructor, got " ++ show t
+    
 ti env (EBIf e1 e2 e3) = do
     (s1, t1) <- ti env e1
     s2 <- haveItBeInt (apply s1 t1) 
@@ -153,16 +150,41 @@ ti env (EBLam lenv (n:t) e) =
             env'' = TypeEnv (env' `Map.union` (Map.singleton n (Scheme [] tv)))
         (s1, t1) <- ti env'' (EBLam lenv t e)
         return (s1, TFunc (apply s1 tv) t1)
-ti env (EBMatch x cases) = -- TODO dostawanie środowiska z konstruktorami
-    let f (s, t) (CaseBound match e) = do {
-        (s', t') <- ti (apply s env) e;
-        case t of
-            Nothing -> return (s', Just t')
-            Just t'' -> do 
-                s'' <- mgu (apply s' t'') (apply s' t')
-                return (s'' `composeSubst` s' `composeSubst` s, Just $ apply s'' t'');
-     } in
-    foldM f (nullSubst, Nothing) cases >>= \(s, Just t) -> return (s, t)
+ti env@(TypeEnv env') (EBMatch x cases) = 
+    let getTypeAndUnify [] typ = return nullSubst
+        getTypeAndUnify (CaseBound (MVar n) e:t) typ = getTypeAndUnify t typ
+        getTypeAndUnify ((CaseBound (MCons match _) e):_) typ = case Map.lookup match env' of
+            Nothing -> throwError $ "unbound variant constructor: " ++ show match
+            Just sigma -> do 
+                t <- instantiate sigma
+                case t of 
+                    (TVariant name ts) -> mgu t typ
+                    _ -> throwError $ "expected variant constructor, got " ++ show t
+        doMatch (MVar n) (TypeEnv env) xtype =
+            return (nullSubst, TypeEnv (Map.insert n (Scheme [] xtype) env))
+        doMatch (MCons name ms) (TypeEnv env) xtype = case xtype of
+            (TVariant name' ts) -> if length ms /= length ts
+                then 
+                    throwError $ "TypeError, expected " ++ (show $ length ms) ++ "arguments, got " ++ (show $ length ts)
+                else
+                    foldM (\(s, e) (m, t) -> do (s', e') <- doMatch m e (apply s t); return (s' `composeSubst` s, e')) (nullSubst, TypeEnv env) (zip ms ts)
+            _ -> throwError $ "expected variant type, got " ++ show xtype
+        f xtype (s, t) (CaseBound match e) = do {
+            (sE, mEnv) <- doMatch match (apply s env) xtype;
+            (s', t') <- ti mEnv e;
+            let s'' = s' `composeSubst` sE `composeSubst` s in
+                case t of
+                    Nothing -> return (s'', Just t')
+                    Just t'' -> do 
+                        sF <- mgu (apply s'' t'') (apply s'' t')
+                        return (sF `composeSubst` s'', Just $ apply (sF `composeSubst` s'') t'');
+        } in
+    case Map.lookup x env' of
+        Nothing -> throwError $ "unbound variable: " ++ show x
+        Just sigma -> do 
+            t <- instantiate sigma
+            subst <- getTypeAndUnify cases t
+            foldM (f (apply subst t)) (subst, Nothing) cases >>= \(s, Just t) -> return (s, t)
 ti env exp@(EBApp e1 e2) =
     do  tv <- newTyVar "a"
         (s1, t1) <- ti env e1

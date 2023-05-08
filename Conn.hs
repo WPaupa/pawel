@@ -7,6 +7,7 @@ import Binder
 import OpParser
 import Preprocessor
 import Control.Monad.Reader
+import Inference
 import qualified Data.Map as Map
 
 is_typed :: [TypeDecl] -> Bool
@@ -38,25 +39,30 @@ getInts = (Map.map fromLeft) . (Map.filter isLeft) . (Map.map f) where
 str_to_calc :: String -> String
 str_to_calc x = case pProgram (myLexer x) of
     Left err -> err
-    Right (Prog es) -> (show env) ++ "\n\n===============\n\n" ++ (show $ getInts $ Map.map (\x -> runReader (calc x) env) env) where
+    Right (Prog es) -> (show tenv) ++ "\n\n===============\n\n" ++ (show $ getInts $ Map.map (\x -> runReader (calc x) env) env) where
         ops = inserts bop (getOps (Prog es))
-        env = foldl f aenv es
-        f env (DExp name@(Idt fname) tds exp) = let unbound = (ELam (map untype tds) $ infixate exp ops) in
+        (env, tenv) = foldl f (aenv, Map.empty) es
+        f (env, tenv) (DExp name@(Idt fname) tds exp) = let unbound = (ELam (map untype tds) $ infixate exp ops) in
             if is_typed tds then
                 let bound = bba unbound fname env in
                     case Map.lookup name env of
-                        Just (EBOverload xs) -> Map.insert name (EBOverload $ bound:xs) env
-                        _ -> Map.insert name (EBOverload [bound]) env
+                        Just (EBOverload xs) -> (Map.insert name (EBOverload $ bound:xs) env, tenv)
+                        _ -> (Map.insert name (EBOverload [bound]) env, tenv)
             else
-                extend unbound fname env
-        f env (DType name tvs []) = env
-        f env (DType name tvs ((VarType vname ts):t)) = f (
-                let tns = map (Idt . show) ts 
-                    expify [] xs = EBVariant vname (reverse xs)
-                    expify (h:t) xs = EBCons (FWCons $ \e -> expify t (e:xs)) in
-                    Map.insert vname (expify tns []) env
+                (extend unbound fname env, tenv)
+        f envs (DType name tvs []) = envs
+        f (env, tenv) (DType name tvs ((VarType vname ts):t)) = f (
+                let tng [] n = []
+                    tng (h:t) n = (Idt $ "a" ++ show n):tng t (n+1) 
+                    foldFuncs [] acc = acc
+                    foldFuncs (h:t) acc = TFunc (TVar h) (foldFuncs t acc) 
+                    tns = tng ts 0 in
+                    (
+                        Map.insert vname (EBLam Map.empty tns (EBVariant vname (map EBVar tns))) env,
+                        Map.insert vname (Scheme tvs $ TVariant name ts) tenv
+                    )
             ) (DType name tvs t)
-        f env _ = env
+        f envs _ = envs
 
 main :: IO ()
 main = interact str_to_calc

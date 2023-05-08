@@ -83,7 +83,6 @@ calc (EBApp e1 e2) = do
         Right (EBLam env [] e) -> local (envSubstitute env) $ calc (EBApp e (coerce e2'))
         Right (EBLam env (h:t) e) -> local (\env' -> insert h (coerce e2') $ envSubstitute env env') $ calc (EBLam (insert h (coerce e2') env) t e)
         Right (EBVariant name vs) -> calc $ EBVariant name $ map (\v -> EBApp v (coerce e2')) vs
-        Right (EBCons (FWCons f)) -> calc $ f (coerce e2')
         Right e -> return $ Right $ EBApp e $ coerce e2'
 calc (EBOverload [x]) = calc x
 calc (EBOverload xs) = mapM calc xs >>= return . uncoerce . flattenExp . map coerce
@@ -106,7 +105,7 @@ calc (EBMatch x (CaseBound m e:t)) = do
                 x'' -> case m of
                     MVar y -> local (insert y x'') (calc e)
                     _ -> return $ Right $ EBMatch x (CaseBound m e:t)
-calc (EBArith x y (AriOp f)) = do
+calc (EBArith x y (AriOp f)) = do -- ogarnąć kwestię intów
     x' <- calc x
     y' <- calc y
     case (x', y') of
@@ -124,7 +123,6 @@ calc (EOVar pos x) = do
         Nothing -> return $ Right $ EOVar pos x
         Just (EBOverload xs) -> calc $ xs !! pos
         Just x -> return $ Right x
-calc (EBCons f) = return $ Right $ EBCons f
 
 match :: Idt -> Match -> [ExpBound] -> Maybe [(Idt, ExpBound)]
 match q (MVar x) l = Just [(x, EBVariant q l)]

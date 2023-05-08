@@ -6,26 +6,27 @@
 
 module AbsPawel where
 
-import Prelude
-import qualified Prelude as C (Eq, Ord, Show, Read)
 import qualified Data.String
 import Data.Map (Map)
 
 data Program = Prog [Decl]
-  deriving (C.Eq, C.Ord, C.Show, C.Read)
+  deriving (Eq, Ord, Show, Read)
 
 data Decl
     = DExp Idt [TypeDecl] Exp
     | DLOp Integer Idt Idt
     | DROp Integer Idt Idt
     | DType Idt [Idt] [Variant]
-  deriving (C.Eq, C.Ord, C.Show, C.Read)
+  deriving (Eq, Ord, Show, Read)
 
 data Variant = VarType Idt [Type]
-  deriving (C.Eq, C.Ord, C.Show, C.Read)
+  deriving (Eq, Ord, Show, Read)
 
 data Type = TInt | TVar Idt | TFunc Type Type | TVariant Idt [Type]
-  deriving (C.Eq, C.Ord, C.Show, C.Read)
+  deriving (Eq, Ord, Show, Read)
+
+data Scheme  =  Scheme [Idt] Type deriving (Eq,Show)
+newtype TypeEnv = TypeEnv (Map Idt Scheme) deriving (Eq,Show)
 
 data Exp
     = EUnparsed [Exp]
@@ -36,19 +37,19 @@ data Exp
     | ELam [Idt] Exp
     | EMatch Idt [MatchCase]
     | EApp Exp Exp
-  deriving (C.Eq, C.Ord, C.Show, C.Read)
+  deriving (Eq, Ord, Show, Read)
 
 data MatchCase = Case Match Exp
-  deriving (C.Eq, C.Ord, C.Show, C.Read)
+  deriving (Eq, Ord, Show, Read)
 
 data Match = MVar Idt | MList [Match] | MCons Idt [Match]
-  deriving (C.Eq, C.Ord, C.Show, C.Read)
+  deriving (Eq, Ord, Show, Read)
 
 data TypeDecl = TDVar Idt | TDType Idt Type
-  deriving (C.Eq, C.Ord, C.Show, C.Read)
+  deriving (Eq, Ord, Show, Read)
 
 newtype Idt = Idt String
-  deriving (C.Eq, C.Ord, C.Show, C.Read, Data.String.IsString)
+  deriving (Eq, Ord, Show, Read, Data.String.IsString)
 
 untype :: TypeDecl -> Idt
 untype (TDVar x) = x
@@ -59,7 +60,6 @@ data ExpBound
     | EOVar Int Idt
     | EBInt Integer
     | EBVariant Idt [ExpBound]
-    | EBCons FWrapper
     | EBIf ExpBound ExpBound ExpBound
     | EBLet Idt [TypeDecl] ExpBound ExpBound
     | EBLam BEnv [Idt] ExpBound
@@ -77,7 +77,6 @@ instance Show ExpBound where
     show (EBInt x) = show x
     show (EBVariant x []) = show x
     show (EBVariant x xs) = show x ++ "(" ++ (foldl (\a b -> a ++ ", " ++ b) (show $ head xs) (map show $ tail xs)) ++ ")"
-    show (EBCons x) = show x
     show (EBIf e1 e2 e3) = "if " ++ show e1 ++ " then " ++ show e2 ++ " else " ++ show e3
     show (EBLet x tds e1 e2) = "let " ++ show x ++ " = " ++ show e1 ++ " in " ++ show e2
     show (EBLam env [] e) = "(\\_->" ++ show e ++ ")"
@@ -86,16 +85,6 @@ instance Show ExpBound where
     show (EBApp e1 e2) = show e1 ++ " " ++ show e2
     show (EBOverload xs) = "overload " ++ (foldl (\a b -> a ++ " | " ++ b) (show $ head xs) (map show $ tail xs))
     show (EBArith e1 e2 op) = show e1 ++ " " ++ show op ++ " " ++ show e2
-
-data FWrapper = FWCons (ExpBound -> ExpBound)
-instance Show FWrapper where
-    show (FWCons f) = show (f $ EBInt 0)
-instance Eq FWrapper where
-    (FWCons f) == (FWCons g) = f (EBInt 0) == g (EBInt 0)
-instance Ord FWrapper where
-    compare (FWCons f) (FWCons g) = compare (f $ EBInt 0) (g $ EBInt 0)
-instance Read FWrapper where
-    readsPrec _ _ = []
 
 newtype AriOp = AriOp (Integer -> Integer -> Integer)
 instance Show AriOp where
