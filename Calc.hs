@@ -163,16 +163,8 @@ aenv = inserts [(Idt "{-}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Id
                 (Idt "{<=}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x <= y then 1 else 0)),
                 (Idt "{==}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x == y then 1 else 0))] empty
 
+extend :: Exp -> Idt -> BEnv -> BEnv
+extend x fname env = insert fname (coerce $ runReader (calc $ bindRecurrent x fname env) (insert fname (EBVar fname) env)) env
+
 cc x = runReader (calc x) aenv
-
 bb x fname = runReader (bind x) (insert (Idt fname) (EBVar $ Idt fname) aenv)
-bba x fname aenv = runReader (bind x) (insert (Idt fname) (EBVar $ Idt fname) aenv)
-
-x = EVar $ Idt "x"
-xm1 = EApp (EApp (EVar $ Idt "{-}") x) (EInt 1) 
-fact = ELam [Idt "x"] $ EIf x (EApp (EApp (EVar $ Idt "{*}") x) (EApp (EVar $ Idt "fact") xm1)) (EInt 1)
-
-extend x fname env = insert (Idt fname) (coerce $ runReader (calc $ bba x fname env) (insert (Idt fname) (EBVar $ Idt fname) env)) env
-doe y x fname env = runReader (calc (bb y "abc'")) (extend x fname env)
-
-fact5 = doe (EApp fact $ EInt 5) fact "fact" aenv

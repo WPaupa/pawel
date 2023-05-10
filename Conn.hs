@@ -22,6 +22,7 @@ isLeft (Right a) = False
 fromLeft :: Either a b -> a
 fromLeft (Left a) = a
 
+
 bop = [(Idt "+", (Idt "{+}", 5, 1)), 
        (Idt "-", (Idt "{-}", 5, 1)),
        (Idt "/", (Idt "{/}", 7, 1)),
@@ -42,14 +43,14 @@ str_to_calc x = case pProgram (myLexer x) of
     Right (Prog es) -> (show tenv) ++ "\n\n===============\n\n" ++ (show $ getInts $ Map.map (\x -> runReader (calc x) env) env) where
         ops = inserts bop (getOps (Prog es))
         (env, tenv) = foldl f (aenv, Map.empty) es
-        f (env, tenv) (DExp name@(Idt fname) tds exp) = let unbound = (ELam (map untype tds) $ infixate exp ops) in
+        f (env, tenv) (DExp name tds exp) = let unbound = (ELam (map untype tds) $ infixate exp ops) in
             if is_typed tds then
-                let bound = bba unbound fname env in
+                let bound = bindRecurrent unbound name env in
                     case Map.lookup name env of
                         Just (EBOverload xs) -> (Map.insert name (EBOverload $ bound:xs) env, tenv)
                         _ -> (Map.insert name (EBOverload [bound]) env, tenv)
             else
-                (extend unbound fname env, tenv)
+                (extend unbound name env, tenv)
         f envs (DType name tvs []) = envs
         f (env, tenv) (DType name tvs ((VarType vname ts):t)) = f (
                 let tng [] n = []

@@ -22,6 +22,7 @@ instance Types Type where
                                Just t   -> t
     apply s (TFunc t1 t2)  = TFunc (apply s t1) (apply s t2)
     apply s (TVariant name types) = TVariant name (map (apply s) types)
+    apply s (TOverload types) = TOverload (map (apply s) types)
     apply s t             =  t
 
 instance Types Scheme where
@@ -47,6 +48,10 @@ instance Types TypeEnv where
 generalize        ::  TypeEnv -> Type -> Scheme
 generalize env t  =   Scheme vars t
   where vars = Set.toList ((ftv t) `Set.difference` (ftv env))
+
+unfunify :: Type -> Type
+unfunify (TFunc t1 t2) = t2
+unfunify t = t
 
 data TIEnv = TIEnv  {}
 data TIState = TIState { tiSupply :: Int }
@@ -95,7 +100,10 @@ haveItBeInt (TVar a) = return $ Map.singleton a TInt
 haveItBeInt t = throwError $ "TypeError, expected Int, got " ++ show t
 
 varBind :: Idt -> Type -> TI Subst
-varBind u t  | t == TVar u           =  return nullSubst
+varBind u@(Idt u') t  
+             | t == TVar u           =  return nullSubst
+             | u `Set.member` ftv t  =  throwError $ "occurs check fails: " ++ u' ++
+                                         " vs. " ++ show t
              | otherwise             =  return (Map.singleton u t)
 
 
@@ -108,8 +116,8 @@ ti (TypeEnv env) (EBVar n@(Idt n')) =
 ti (TypeEnv env) (EOVar pos n@(Idt n')) = 
     case Map.lookup n env of
        Nothing     ->  throwError $ "unbound variable: " ++ n'
-       Just sigma  ->  do  t <- instantiate sigma
-                           return (nullSubst, t)
+       Just sigma  ->  do  (TOverload ts) <- instantiate sigma
+                           return (nullSubst, ts !! pos)
 ti _ (EBInt n) = (return (nullSubst, TInt))
 ti env@(TypeEnv env') (EBVariant name es) = 
     let f (s, ts) e = do {
@@ -120,7 +128,7 @@ ti env@(TypeEnv env') (EBVariant name es) =
         Nothing -> throwError $ "unbound variant constructor: " ++ show name
         Just sigma -> do 
             t <- instantiate sigma
-            case t of 
+            case unfunify t of 
                 (TVariant name' ts') -> do 
                     (s, ts) <- foldM f (nullSubst, []) es
                     s' <- mgu (TVariant name ts) t
@@ -166,8 +174,8 @@ ti env@(TypeEnv env') (EBMatch x cases) =
             Nothing -> throwError $ "unbound variant constructor: " ++ show match
             Just sigma -> do 
                 t <- instantiate sigma
-                case t of 
-                    (TVariant name ts) -> mgu t typ
+                case unfunify t of 
+                    (TVariant name ts) -> mgu (unfunify t) typ
                     _ -> throwError $ "expected variant constructor, got " ++ show t
         doMatch (MVar n) (TypeEnv env) xtype =
             return (nullSubst, TypeEnv (Map.insert n (Scheme [] xtype) env))
@@ -211,13 +219,22 @@ ti env (EBArith e1 e2 op) =
 
 
 typeInference :: Map.Map Idt Scheme -> ExpBound -> TI Type
-typeInference env e =
-    do  (s, t) <- ti (TypeEnv env) e
-        return (apply s t)
-       
+typeInference env e = do
+    (s, t) <- ti (TypeEnv env) e
+    return (apply s t)
+
+recurrentInference :: Map.Map Idt Scheme -> ExpBound -> Idt -> TI Type
+recurrentInference env e name@(Idt name') = do
+    tv <- newTyVar name'
+    (s, t) <- ti (TypeEnv (Map.insert name (Scheme [] tv) env)) e
+    s' <- mgu (apply s t) (apply s tv)
+    return (apply (s' `composeSubst` s) t)
+
 test :: ExpBound -> IO ()
 test e =
     let (res, _) = runTI (typeInference Map.empty e) in
         case res of
           Left err  ->  putStrLn $ show e ++ "\n " ++ err ++ "\n"
           Right t   ->  putStrLn $ show e ++ " :: " ++ show t ++ "\n"
+
+testRec name e = fst $ runTI (recurrentInference Map.empty e name)

@@ -22,7 +22,7 @@ data Decl
 data Variant = VarType Idt [Type]
   deriving (Eq, Ord, Show, Read)
 
-data Type = TInt | TVar Idt | TFunc Type Type | TVariant Idt [Type]
+data Type = TInt | TVar Idt | TFunc Type Type | TVariant Idt [Type] | TOverload [Type]
   deriving (Eq, Ord, Show, Read)
 
 data Scheme  =  Scheme [Idt] Type deriving (Eq,Show)
