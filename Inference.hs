@@ -50,11 +50,9 @@ generalize env t  =   Scheme vars t
 
 data TIEnv = TIEnv  {}
 data TIState = TIState { tiSupply :: Int }
-type TI a = ErrorT String (ReaderT TIEnv (StateT TIState IO)) a
-runTI :: TI a -> IO (Either String a, TIState)
-runTI t = 
-    do (res, st) <- runStateT (runReaderT (runErrorT t) initTIEnv) initTIState
-       return (res, st)
+type TI a = ErrorT String (ReaderT TIEnv (State TIState)) a
+runTI :: TI a -> (Either String a, TIState)
+runTI t = runState (runReaderT (runErrorT t) initTIEnv) initTIState
   where initTIEnv = TIEnv
         initTIState = TIState{tiSupply = 0}
 newTyVar :: String -> TI Type
@@ -135,14 +133,25 @@ ti env (EBIf e1 e2 e3) = do
     (s3, t2) <- ti (apply (s2 `composeSubst` s1) env) e2
     (s4, t3) <- ti (apply (s3 `composeSubst` s2 `composeSubst` s1) env) e3
     s5 <- mgu (apply (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1) t2) (apply (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1) t3)
-    return (s5 `composeSubst` s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1, apply s5 t2)
-ti env (EBLet x tds e1 e2) =
-    do  (s1, t1) <- ti env (EBLam Map.empty (map untype tds) e1) -- środowisko
-        let TypeEnv env' = remove env x
-            t' = generalize (apply s1 env) t1
-            env'' = TypeEnv (Map.insert x t' env')
-        (s2, t2) <- ti (apply s1 env'') e2
-        return (s1 `composeSubst` s2, t2)
+    return (s5 `composeSubst` s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1, apply s5 t3)
+ti env (EBLet x tds e1 e2) = do  
+    (s1, t1) <- ti env (EBLam Map.empty (map untype tds) e1)
+    let typeof [] = newTyVar "a"
+        typeof ((TDVar x):t) = do
+            tv <- newTyVar "a"
+            t' <- typeof t
+            return $ TFunc tv t'
+        typeof ((TDType x typ):t) = do
+            t' <- typeof t
+            return $ TFunc typ t' 
+    t <- typeof tds
+    s' <- mgu t1 t 
+    let TypeEnv env' = remove env x
+        t' = generalize (apply (s' `composeSubst` s1) env) (apply s' t1)
+        env'' = TypeEnv (Map.insert x t' env')
+    
+    (s2, t2) <- ti (apply (s' `composeSubst` s1) env'') e2
+    return (s2 `composeSubst` s' `composeSubst` s1, t2)
 ti env (EBLam lenv [] e) = ti env e
 ti env (EBLam lenv (n:t) e) =
     do  tv <- newTyVar "a"
@@ -208,7 +217,7 @@ typeInference env e =
        
 test :: ExpBound -> IO ()
 test e =
-    do  (res, _) <- runTI (typeInference Map.empty e)
+    let (res, _) = runTI (typeInference Map.empty e) in
         case res of
           Left err  ->  putStrLn $ show e ++ "\n " ++ err ++ "\n"
           Right t   ->  putStrLn $ show e ++ " :: " ++ show t ++ "\n"
