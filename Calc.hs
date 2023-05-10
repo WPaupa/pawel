@@ -52,6 +52,14 @@ envSubstitute lenv nenv = Map.map (\x -> case x of
         Just z -> z
     _ -> x) lenv
 
+tryIntify :: (Either Integer ExpBound) -> Reader BEnv (Maybe Integer)
+tryIntify (Left x) = return $ Just x
+tryIntify (Right x) = do
+    x' <- calc $ EBApp (EBApp x (EBLam empty [Idt "x"] $ EBArith (EBVar $ Idt "x") (EBInt 1) (AriOp (+)))) (EBInt 0)
+    case x' of
+        Left x'' -> return $ Just x''
+        _ -> return Nothing
+
 calc :: ExpBound -> Reader BEnv (Either Integer ExpBound)
 calc (EBVar x) = do
     env <- ask
@@ -108,6 +116,8 @@ calc (EBMatch x (CaseBound m e:t)) = do
 calc (EBArith x y (AriOp f)) = do -- ogarnąć kwestię intów
     x' <- calc x
     y' <- calc y
+    x'' <- tryIntify x'
+    y'' <- tryIntify y'
     case (x', y') of
         (Left x'', Left y'') -> return $ Left $ f x'' y''
         (Right (EBOverload xs), Left y'') -> fmap (uncoerce . flattenExp) $ 
@@ -116,7 +126,15 @@ calc (EBArith x y (AriOp f)) = do -- ogarnąć kwestię intów
             mapM (\y'' -> fmap coerce (calc $ EBArith (EBInt x'') y'' (AriOp f))) ys
         (Right (EBOverload xs), Right (EBOverload ys)) -> fmap (uncoerce . flattenExp) $
             mapM (\(x'', y'') -> fmap coerce (calc $ EBArith x'' y'' (AriOp f))) $ allPairs xs ys
-        _ -> return $ Right $ EBArith x y (AriOp f)
+        (Right nl, Left nr) -> case x'' of
+            Just nl' -> return $ Left $ f nl' nr
+            Nothing -> return $ Right $ EBArith nl (EBInt nr) (AriOp f)
+        (Left nl, Right nr) -> case x'' of
+            Just nr' -> return $ Left $ f nl nr'
+            Nothing -> return $ Right $ EBArith (EBInt nl) nr (AriOp f)
+        (Right nl, Right nr) -> case (x'', y'') of
+            (Just nl', Just nr') -> return $ Left $ f nl' nr'
+            _ -> return $ Right $ EBArith nl nr (AriOp f)
 calc (EOVar pos x) = do
     env <- ask
     case lookup x env of
