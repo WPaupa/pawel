@@ -152,19 +152,3 @@ match' :: Match -> ExpBound -> Maybe [(Idt, ExpBound)]
 match' (MVar x) y = Just [(x, y)]
 match' (MCons x xs) (EBVariant y ys) = if x == y then match y (MCons x xs) ys else Nothing
 match' _ _ = Nothing
-
-aenv = inserts [(Idt "{-}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (-)), 
-                (Idt "{*}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (*)),
-                (Idt "{+}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (+)), 
-                (Idt "{/}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> x `div` y)),
-                (Idt "{>}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x > y then 1 else 0)),
-                (Idt "{<}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x < y then 1 else 0)),
-                (Idt "{>=}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x >= y then 1 else 0)),
-                (Idt "{<=}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x <= y then 1 else 0)),
-                (Idt "{==}", EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x == y then 1 else 0))] empty
-
-extend :: Exp -> Idt -> BEnv -> BEnv
-extend x fname env = insert fname (coerce $ runReader (calc $ bindRecurrent x fname env) (insert fname (EBVar fname) env)) env
-
-cc x = runReader (calc x) aenv
-bb x fname = runReader (bind x) (insert (Idt fname) (EBVar $ Idt fname) aenv)

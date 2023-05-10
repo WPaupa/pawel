@@ -102,29 +102,31 @@ bind (EMatch x mcs) = let
             (CaseBoundOverload hs, EBOverload ts) -> bubble $ map (\(EBMatch x' ms) -> bubble $ map (\c -> return $ EBMatch x' $ c : ms) hs) ts
     in bindMCs mcs
 
-makeOverloadsRecurrent :: Idt -> ExpBound -> ExpBound
-makeOverloadsRecurrent name (EBOverload xs) =
-    let recOver n (EBVar name') = if name == name' then EOVar n name else EBVar name'
-        recOver n (EBVariant name' xs) = EBVariant name' $ map (recOver n) xs
-        recOver n (EBIf e1 e2 e3) = EBIf (recOver n e1) (recOver n e2) (recOver n e3)
-        recOver n (EBLet name tds e1 e2) = 
-            if elem name (map untype tds) 
-                then 
-                    EBLet name tds e1 (recOver n e2) 
-                else 
-                    EBLet name tds (recOver n e1) (recOver n e2)
-        recOver n (EBLam env xs e) = if elem name xs then EBLam env xs e else EBLam env xs (recOver n e)
-        recOver n (EBMatch x cases) = 
-            let inAny name (MVar name') = name == name'
-                inAny name (MCons consn xs) = any (inAny name) xs
-                help [] = []
-                help ((CaseBound p e):xs) = if inAny name p then (CaseBound p e):(help xs) else (CaseBound p (recOver n e)):(help xs) in
-            EBMatch x $ help cases
-        recOver n (EBApp e1 e2) = EBApp (recOver n e1) (recOver n e2)
-        recOver n (EBArith e1 e2 op) = EBArith (recOver n e1) (recOver n e2) op 
-        recOver n x = x in
-    EBOverload $ map (\(x, n) -> recOver n x) (zip xs [0..])
-makeOverloadsRecurrent name x = x
+addOverloadNumber :: Idt -> Int -> ExpBound -> ExpBound
+addOverloadNumber name n (EBVar name') = if name == name' then EOVar n name else EBVar name'
+addOverloadNumber name n (EBVariant name' xs) = EBVariant name' $ map (addOverloadNumber name n) xs
+addOverloadNumber name n (EBIf e1 e2 e3) = EBIf (addOverloadNumber name n e1) (addOverloadNumber name n e2) (addOverloadNumber name n e3)
+addOverloadNumber name n (EBLet x tds e1 e2) = 
+    if elem name (map untype tds) 
+        then 
+            EBLet x tds e1 (addOverloadNumber name n e2) 
+        else 
+            EBLet x tds (addOverloadNumber name n e1) (addOverloadNumber name n e2)
+addOverloadNumber name n (EBLam env xs e) = if elem name xs then EBLam env xs e else EBLam env xs (addOverloadNumber name n e)
+addOverloadNumber name n (EBMatch x cases) = 
+    let inAny name (MVar name') = name == name'
+        inAny name (MCons consn xs) = any (inAny name) xs
+        help [] = []
+        help ((CaseBound p e):xs) = if inAny name p then (CaseBound p e):(help xs) else (CaseBound p (addOverloadNumber name n e)):(help xs) in
+    EBMatch x $ help cases
+addOverloadNumber name n (EBApp e1 e2) = EBApp (addOverloadNumber name n e1) (addOverloadNumber name n e2)
+addOverloadNumber name n (EBArith e1 e2 op) = EBArith (addOverloadNumber name n e1) (addOverloadNumber name n e2) op 
+addOverloadNumber name n x = x
+
+makeOverloadsRecurrent :: Int -> Idt -> ExpBound -> ExpBound
+makeOverloadsRecurrent startN name (EBOverload xs) =
+    EBOverload $ map (\(x, n) -> addOverloadNumber name n x) (zip xs [startN..])
+makeOverloadsRecurrent startN name x = addOverloadNumber name startN x
 
 bindRecurrent :: Exp -> Idt -> BEnv -> ExpBound
-bindRecurrent x fname env = makeOverloadsRecurrent fname $ runReader (bind x) (insert fname (EBVar fname) env)
+bindRecurrent x fname env = runReader (bind x) (insert fname (EBVar fname) env)

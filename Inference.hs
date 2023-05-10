@@ -50,7 +50,7 @@ generalize env t  =   Scheme vars t
   where vars = Set.toList ((ftv t) `Set.difference` (ftv env))
 
 unfunify :: Type -> Type
-unfunify (TFunc t1 t2) = t2
+unfunify (TFunc t1 t2) = unfunify t2
 unfunify t = t
 
 data TIEnv = TIEnv  {}
@@ -106,6 +106,10 @@ varBind u@(Idt u') t
                                          " vs. " ++ show t
              | otherwise             =  return (Map.singleton u t)
 
+freshVariantType :: Idt -> Int -> TI Type
+freshVariantType name n = do
+    vars <- mapM (\ _ -> newTyVar "a") [1..n]
+    return $ TVariant name vars
 
 ti        ::  TypeEnv -> ExpBound -> TI (Subst, Type)
 ti (TypeEnv env) (EBVar n@(Idt n')) = 
@@ -131,9 +135,9 @@ ti env@(TypeEnv env') (EBVariant name es) =
             case unfunify t of 
                 (TVariant name' ts') -> do 
                     (s, ts) <- foldM f (nullSubst, []) es
-                    s' <- mgu (TVariant name ts) t
-                    return (s' `composeSubst` s, apply s' t)
-                _ -> throwError $ "expected variant constructor, got " ++ show t
+                    s' <- mgu (TVariant name ts) (unfunify t)
+                    return (s' `composeSubst` s, apply s' (unfunify t))
+                _ -> throwError $ "expected variant constructor, got " ++ show (unfunify t)
     
 ti env (EBIf e1 e2 e3) = do
     (s1, t1) <- ti env e1
@@ -168,15 +172,13 @@ ti env (EBLam lenv (n:t) e) =
         (s1, t1) <- ti env'' (EBLam lenv t e)
         return (s1, TFunc (apply s1 tv) t1)
 ti env@(TypeEnv env') (EBMatch x cases) = 
-    let getTypeAndUnify [] typ = return nullSubst
-        getTypeAndUnify (CaseBound (MVar n) e:t) typ = getTypeAndUnify t typ
-        getTypeAndUnify ((CaseBound (MCons match _) e):_) typ = case Map.lookup match env' of
+    let getTypeAndUnify match typ = case Map.lookup match env' of
             Nothing -> throwError $ "unbound variant constructor: " ++ show match
             Just sigma -> do 
                 t <- instantiate sigma
                 case unfunify t of 
                     (TVariant name ts) -> mgu (unfunify t) typ
-                    _ -> throwError $ "expected variant constructor, got " ++ show t
+                    _ -> throwError $ "expected variant constructor, got " ++ show (unfunify t)
         doMatch (MVar n) (TypeEnv env) xtype =
             return (nullSubst, TypeEnv (Map.insert n (Scheme [] xtype) env))
         doMatch (MCons name ms) (TypeEnv env) xtype = case xtype of
@@ -185,23 +187,26 @@ ti env@(TypeEnv env') (EBMatch x cases) =
                     throwError $ "TypeError, expected " ++ (show $ length ms) ++ "arguments, got " ++ (show $ length ts)
                 else
                     foldM (\(s, e) (m, t) -> do (s', e') <- doMatch m e (apply s t); return (s' `composeSubst` s, e')) (nullSubst, TypeEnv env) (zip ms ts)
+            TVar xvar -> do
+                s <- getTypeAndUnify name xtype
+                let TVariant name' ts = apply s xtype in
+                    foldM (\(s, e) (m, t) -> do (s', e') <- doMatch m e (apply s t); return (s' `composeSubst` s, e')) (s, apply s (TypeEnv env)) (zip ms ts)
             _ -> throwError $ "expected variant type, got " ++ show xtype
-        f xtype (s, t) (CaseBound match e) = do {
+        f (xtype, s, t) (CaseBound match e) = do {
             (sE, mEnv) <- doMatch match (apply s env) xtype;
             (s', t') <- ti mEnv e;
             let s'' = s' `composeSubst` sE `composeSubst` s in
                 case t of
-                    Nothing -> return (s'', Just t')
+                    Nothing -> return (apply s'' xtype, s'', Just t')
                     Just t'' -> do 
                         sF <- mgu (apply s'' t'') (apply s'' t')
-                        return (sF `composeSubst` s'', Just $ apply (sF `composeSubst` s'') t'');
+                        return (apply (sF `composeSubst` s'') xtype, sF `composeSubst` s'', Just $ apply (sF `composeSubst` s'') t'');
         } in
     case Map.lookup x env' of
         Nothing -> throwError $ "unbound variable: " ++ show x
         Just sigma -> do 
             t <- instantiate sigma
-            subst <- getTypeAndUnify cases t
-            foldM (f (apply subst t)) (subst, Nothing) cases >>= \(s, Just t) -> return (s, t)
+            foldM f (t, nullSubst, Nothing) cases >>= \(xtype, s, Just t) -> return (s, t)
 ti env exp@(EBApp e1 e2) =
     do  tv <- newTyVar "a"
         (s1, t1) <- ti env e1
@@ -229,6 +234,18 @@ recurrentInference env e name@(Idt name') = do
     (s, t) <- ti (TypeEnv (Map.insert name (Scheme [] tv) env)) e
     s' <- mgu (apply s t) (apply s tv)
     return (apply (s' `composeSubst` s) t)
+
+overloadInference :: Map.Map Idt Scheme -> ExpBound -> Idt -> Type
+overloadInference env (EBOverload xs) name = 
+    let k = TOverload [t | Right t <- map (\x -> let (res, _) = runTI (recurrentInference env x name) in res) xs] in
+        case k of
+            TOverload [] -> error "no typeable overload"
+            _ -> k
+overloadInference env e name = 
+    let (res, _) = runTI (recurrentInference env e name) in
+        case res of 
+            Left err -> error err
+            Right t -> t
 
 test :: ExpBound -> IO ()
 test e =
