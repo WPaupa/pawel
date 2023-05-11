@@ -2,7 +2,7 @@ module Inference where
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Control.Monad.Error
+import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import MatchChecker
@@ -56,9 +56,9 @@ unfunify (TFunc t1 t2) = unfunify t2
 unfunify t = t
 
 data TIState = TIState { tiSupply :: Int }
-type TI a = ErrorT String (ReaderT VariantEnv (State TIState)) a
+type TI a = ExceptT String (ReaderT VariantEnv (State TIState)) a
 runTI :: VariantEnv -> TI a -> (Either String a, TIState)
-runTI env t = runState (runReaderT (runErrorT t) env) $ TIState{tiSupply = 0}
+runTI env t = runState (runReaderT (runExceptT t) env) $ TIState{tiSupply = 0}
 
 newTyVar :: String -> TI Type
 newTyVar prefix =
@@ -101,9 +101,9 @@ haveItBeInt (TVar a) = return $ Map.singleton a TInt
 haveItBeInt t = throwError $ "TypeError, expected Int, got " ++ show t
 
 varBind :: Idt -> Type -> TI Subst
-varBind u@(Idt u') t  
+varBind u t  
              | t == TVar u           =  return nullSubst
-             | u `Set.member` ftv t  =  throwError $ "occurs check fails: " ++ u' ++
+             | u `Set.member` ftv t  =  throwError $ "occurs check fails: " ++ (show u) ++
                                          " vs. " ++ show t
              | otherwise             =  return (Map.singleton u t)
 
@@ -113,16 +113,18 @@ freshVariantType name n = do
     return $ TVariant name vars
 
 ti        ::  TypeEnv -> ExpBound -> TI (Subst, Type)
-ti (TypeEnv env) (EBVar n@(Idt n')) = 
+ti (TypeEnv env) (EBVar n) = 
     case Map.lookup n env of
-       Nothing     ->  throwError $ "unbound variable: " ++ n'
+       Nothing     ->  throwError $ "unbound variable: " ++ (show n)
        Just sigma  ->  do  t <- instantiate sigma
                            return (nullSubst, t)
-ti (TypeEnv env) (EOVar pos n@(Idt n')) = 
+ti (TypeEnv env) (EOVar pos n) = 
     case Map.lookup n env of
-       Nothing     ->  throwError $ "unbound variable: " ++ n'
-       Just sigma  ->  do  (TOverload ts) <- instantiate sigma
-                           return (nullSubst, ts !! pos)
+       Nothing     ->  throwError $ "unbound variable: " ++ (show n)
+       Just sigma  ->  do t <- instantiate sigma
+                          case t of
+                              TOverload ts -> return (nullSubst, ts !! pos)
+                              _ -> throwError $ "expected overloaded type, got " ++ show t
 ti _ (EBInt n) = (return (nullSubst, TInt))
 ti env@(TypeEnv env') (EBVariant name es) = 
     let f (s, ts) e = do {
@@ -232,7 +234,7 @@ recurrentInference env e name@(Idt name') = do
     s' <- mgu (apply s t) (apply s tv)
     return (apply (s' `composeSubst` s) t)
 
-overloadInference :: Map.Map Idt Scheme -> VariantEnv -> ExpBound -> Idt -> (Type, ExpBound)
+overloadInference :: Map.Map Idt Scheme -> VariantEnv -> ExpBound -> Idt -> Except String (Type, ExpBound)
 overloadInference env venv (EBOverload xs) name = 
     let unpair [] = ([], [])
         unpair ((h1, h2):t) = let (t1, t2) = unpair t in (h1:t1, h2:t2) 
@@ -240,13 +242,13 @@ overloadInference env venv (EBOverload xs) name =
                 (\x -> let (res, _) = runTI venv (recurrentInference env x name) in (res, x)) 
             xs] in
         case unpair k of
-            ([], []) -> error "no typeable overload"
-            (types, xs) -> (TOverload types, EBOverload xs)
+            ([], []) -> throwError "no typeable overload"
+            (types, xs) -> return (TOverload types, EBOverload xs)
 overloadInference env venv e name = 
     let (res, _) = runTI venv (recurrentInference env e name) in
         case res of 
-            Left err -> error err
-            Right t -> (t, e)
+            Left err -> throwError err
+            Right t -> return (t, e)
 
 sumTypes :: Type -> Type -> Type
 sumTypes (TOverload ts) (TOverload ts') = TOverload (ts ++ ts')
