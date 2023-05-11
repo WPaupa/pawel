@@ -236,17 +236,21 @@ recurrentInference env e name@(Idt name') = do
     s' <- mgu (apply s t) (apply s tv)
     return (apply (s' `composeSubst` s) t)
 
-overloadInference :: Map.Map Idt Scheme -> ExpBound -> Idt -> Type
+overloadInference :: Map.Map Idt Scheme -> ExpBound -> Idt -> (Type, ExpBound)
 overloadInference env (EBOverload xs) name = 
-    let k = TOverload [t | Right t <- map (\x -> let (res, _) = runTI (recurrentInference env x name) in res) xs] in
-        case k of
-            TOverload [] -> error "no typeable overload"
-            _ -> k
+    let unpair [] = ([], [])
+        unpair ((h1, h2):t) = let (t1, t2) = unpair t in (h1:t1, h2:t2) 
+        k = [(t, x) | (Right t, x) <- map 
+                (\x -> let (res, _) = runTI (recurrentInference env x name) in (res, x)) 
+            xs] in
+        case unpair k of
+            ([], []) -> error "no typeable overload"
+            (types, xs) -> (TOverload types, EBOverload xs)
 overloadInference env e name = 
     let (res, _) = runTI (recurrentInference env e name) in
         case res of 
             Left err -> error err
-            Right t -> t
+            Right t -> (t, e)
 
 sumTypes :: Type -> Type -> Type
 sumTypes (TOverload ts) (TOverload ts') = TOverload (ts ++ ts')

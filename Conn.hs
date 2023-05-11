@@ -66,37 +66,36 @@ getInts m = [(k, x) | (k, Left x) <- Map.toList $ Map.map f m] where
 str_to_calc :: String -> String
 str_to_calc x = case pProgram (myLexer x) of
     Left err -> err
-    Right (Prog es) -> (show tenv) ++ "\n\n===============\n\n" ++ (show $ getInts $ Map.map (\x -> runReader (calc x) env) env) where
+    Right (Prog es) -> (show tenv) ++ "\n\n===============\n\n" ++ 
+        (show env) ++ "\n\n========================\n\n" ++ 
+        (show $ Map.map (\x -> runReader (calc x) env) env) ++ "\n\n========================\n\n" ++
+        (show $ getInts $ Map.map (\x -> runReader (calc x) env) env) where
         ops = inserts bop (getOps (Prog es))
         (env, tenv) = foldl f (aenv, atenv) es
-        f (env, tenv) (DExp name tds exp) = let unbound = (ELam (map untype tds) $ infixate exp ops) in
+        f (env, tenv) (DExp name tds exp) = let unbound = (ELet name tds (infixate exp ops) (EVar name)) in
             if is_typed tds then
                 let bound = bindRecurrent unbound name env 
                     current = case Map.lookup name tenv of
                         Just (Scheme vars t) -> t
                         Nothing -> TOverload []
-                    boundType = overloadInference tenv bound name 
-                    fullScheme = generalize (TypeEnv tenv) (sumTypes current boundType) in
+                    (boundType, exps) = overloadInference tenv bound name 
+                    fullScheme = generalize (TypeEnv tenv) (sumTypes current boundType)
+                    bounds = expToList exps in
                     case Map.lookup name env of
                         Just (EBOverload xs) -> 
-                            let bounds = expToList $ makeOverloadsRecurrent (length xs) name bound in
-                                (
-                                    Map.insert name (EBOverload $ xs ++ bounds) env, 
-                                    Map.insert name fullScheme tenv
-                                )
+                            (
+                                Map.insert name (EBOverload $ xs ++ bounds) env, 
+                                Map.insert name fullScheme tenv
+                            )
                         _ -> 
-                            let bounds = expToList $ makeOverloadsRecurrent 0 name bound in
-                                (
-                                    Map.insert name (EBOverload bounds) env, 
-                                    Map.insert name fullScheme tenv
-                                )
+                            (
+                                Map.insert name (EBOverload bounds) env, 
+                                Map.insert name fullScheme tenv
+                            )
             else
                 let bound = bindRecurrent unbound name env
-                    typeAssignment = overloadInference tenv bound name
-                    recOver = case bound of
-                        EBOverload _ -> makeOverloadsRecurrent 0 name bound 
-                        _ -> bound in
-                (Map.insert name recOver env, Map.insert name (generalize (TypeEnv tenv) typeAssignment) tenv)
+                    (typeAssignment, exps) = overloadInference tenv bound name in
+                (Map.insert name exps env, Map.insert name (generalize (TypeEnv tenv) typeAssignment) tenv)
         f envs (DType name tvs []) = envs
         f (env, tenv) (DType name tvs ((VarType vname ts):t)) = f (
                 let tng [] n = []

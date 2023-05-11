@@ -129,7 +129,7 @@ calc (EBArith x y (AriOp f)) = do -- ogarnąć kwestię intów
         (Right nl, Left nr) -> case x'' of
             Just nl' -> return $ Left $ f nl' nr
             Nothing -> return $ Right $ EBArith nl (EBInt nr) (AriOp f)
-        (Left nl, Right nr) -> case x'' of
+        (Left nl, Right nr) -> case y'' of
             Just nr' -> return $ Left $ f nl nr'
             Nothing -> return $ Right $ EBArith (EBInt nl) nr (AriOp f)
         (Right nl, Right nr) -> case (x'', y'') of
