@@ -17,6 +17,7 @@ instance Types Type where
     ftv TInt          =  Set.empty
     ftv (TFunc t1 t2)  =  ftv t1 `Set.union` ftv t2
     ftv (TVariant name types) = Set.unions $ map ftv types
+    ftv (TOverload types) = Set.unions $ map ftv types
     apply s (TVar n)      =  case Map.lookup n s of
                                Nothing  -> TVar n
                                Just t   -> t
@@ -246,6 +247,12 @@ overloadInference env e name =
         case res of 
             Left err -> error err
             Right t -> t
+
+sumTypes :: Type -> Type -> Type
+sumTypes (TOverload ts) (TOverload ts') = TOverload (ts ++ ts')
+sumTypes (TOverload ts) t = TOverload (ts ++ [t])
+sumTypes t (TOverload ts) = TOverload (t:ts)
+sumTypes t t' = TOverload [t, t']
 
 test :: ExpBound -> IO ()
 test e =
