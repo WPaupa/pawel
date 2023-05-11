@@ -7,7 +7,7 @@
 module AbsPawel where
 
 import qualified Data.String
-import Data.Map (Map)
+import Data.Map (Map, empty)
 
 data Program = Prog [Decl]
   deriving (Eq, Ord, Show, Read)
@@ -49,7 +49,9 @@ data TypeDecl = TDVar Idt | TDType Idt Type
   deriving (Eq, Ord, Show, Read)
 
 newtype Idt = Idt String
-  deriving (Eq, Ord, Show, Read, Data.String.IsString)
+  deriving (Eq, Ord, Read, Data.String.IsString)
+instance Show Idt where
+    show (Idt x) = x
 
 untype :: TypeDecl -> Idt
 untype (TDVar x) = x
@@ -86,7 +88,7 @@ instance Show ExpBound where
     show (EBOverload xs) = "overload " ++ (foldl (\a b -> a ++ " | " ++ b) (show $ head xs) (map show $ tail xs))
     show (EBArith e1 e2 op) = show e1 ++ " " ++ show op ++ " " ++ show e2
 
-newtype AriOp = AriOp (Integer -> Integer -> Integer)
+newtype AriOp = AriOp (Integer -> Integer -> Maybe Integer)
 instance Show AriOp where
     show _ = "AriOp"
 instance Eq AriOp where
@@ -95,5 +97,9 @@ instance Ord AriOp where
     compare _ _ = EQ
 instance Read AriOp where
     readsPrec _ _ = []
+ariOp f = AriOp (\x y -> Just $ f x y)
+ari f = EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") f
+
+
 data MatchCaseBound = CaseBound Match ExpBound | CaseBoundOverload [MatchCaseBound]
   deriving (Eq, Ord, Show, Read)

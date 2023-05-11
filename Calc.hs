@@ -1,6 +1,7 @@
 module Calc where
 
 import Control.Monad.Reader
+import Control.Monad.Except
 import Control.Monad
 import Prelude hiding (lookup)
 import Data.Map hiding (map, foldl, filter)
@@ -31,7 +32,7 @@ flattenExp (x:t) = case flattenExp t of
     EBOverload ys -> EBOverload $ x:ys
     y -> EBOverload $ [x, y]
 
-bubbleOverload :: [ExpBound] -> Reader BEnv ExpBound
+bubbleOverload :: [ExpBound] -> ReaderT BEnv (Except String) ExpBound
 bubbleOverload xs = fmap flattenExp $ mapM calc xs
 
 allPairs :: [a] -> [b] -> [(a,b)]
@@ -44,15 +45,15 @@ envSubstitute lenv nenv = Map.map (\x -> case x of
         Just z -> z
     _ -> x) lenv
 
-tryIntify :: ExpBound -> Reader BEnv (Maybe Integer)
+tryIntify :: ExpBound -> ReaderT BEnv (Except String) (Maybe Integer)
 tryIntify (EBInt x) = return $ Just x
 tryIntify x = do
-    x' <- calc $ EBApp (EBApp x (EBLam empty [Idt "x"] $ EBArith (EBVar $ Idt "x") (EBInt 1) (AriOp (+)))) (EBInt 0)
+    x' <- calc $ EBApp (EBApp x (EBLam empty [Idt "x"] $ EBArith (EBVar $ Idt "x") (EBInt 1) (ariOp (+)))) (EBInt 0)
     case x' of
         EBInt x'' -> return $ Just x''
         _ -> return Nothing
 
-calc :: ExpBound -> Reader BEnv ExpBound
+calc :: ExpBound -> ReaderT BEnv (Except String) ExpBound
 calc (EBVar x) = do
     env <- ask
     case lookup x env of
@@ -110,7 +111,7 @@ calc (EBArith x y (AriOp f)) = do -- ogarnąć kwestię intów
     x'' <- tryIntify x'
     y'' <- tryIntify y'
     case (x', y') of
-        (EBInt x'', EBInt y'') -> return $ EBInt $ f x'' y''
+        (EBInt x'', EBInt y'') -> calcF f x'' y''
         (EBOverload xs, EBInt y'') -> fmap flattenExp $ 
             mapM (\x'' -> calc $ EBArith x'' (EBInt y'') (AriOp f)) xs
         (EBInt x'', EBOverload ys) -> fmap flattenExp $ 
@@ -118,14 +119,18 @@ calc (EBArith x y (AriOp f)) = do -- ogarnąć kwestię intów
         (EBOverload xs, EBOverload ys) -> fmap flattenExp $
             mapM (\(x'', y'') -> calc $ EBArith x'' y'' (AriOp f)) $ allPairs xs ys
         (nl, EBInt nr) -> case x'' of
-            Just nl' -> return $ EBInt $ f nl' nr
+            Just nl' -> calcF f nl' nr
             Nothing -> return $ EBArith nl (EBInt nr) (AriOp f)
         (EBInt nl, nr) -> case y'' of
-            Just nr' -> return $ EBInt $ f nl nr'
+            Just nr' -> calcF f nl nr'
             Nothing -> return $ EBArith (EBInt nl) nr (AriOp f)
         (nl, nr) -> case (x'', y'') of
-            (Just nl', Just nr') -> return $ EBInt $ f nl' nr'
+            (Just nl', Just nr') -> calcF f nl' nr'
             _ -> return $ EBArith nl nr (AriOp f)
+    where
+        calcF f x y = case f x y of 
+            Just x -> return $ EBInt x
+            Nothing -> throwError "Arithmetic error"
 calc (EOVar pos x) = do
     env <- ask
     case lookup x env of

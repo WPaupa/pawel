@@ -7,7 +7,10 @@ import Binder
 import OpParser
 import Preprocessor
 import Control.Monad.Reader
+import Control.Monad.Except
 import Inference
+import System.IO
+import System.Environment
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
@@ -33,15 +36,15 @@ bop = [(Idt "+", (Idt "{+}", 5, 1)),
        (Idt "*", (Idt "{*}", 7, 1)), 
        (Idt ",", (Idt "Cons", 3, -1))]
 
-aenv = inserts [(Idt "{-}", EBLam Map.empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (-)), 
-                (Idt "{*}", EBLam Map.empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (*)),
-                (Idt "{+}", EBLam Map.empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (+)), 
-                (Idt "{/}", EBLam Map.empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> x `div` y)),
-                (Idt "{>}", EBLam Map.empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x > y then 1 else 0)),
-                (Idt "{<}", EBLam Map.empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x < y then 1 else 0)),
-                (Idt "{>=}", EBLam Map.empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x >= y then 1 else 0)),
-                (Idt "{<=}", EBLam Map.empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x <= y then 1 else 0)),
-                (Idt "{==}", EBLam Map.empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") $ AriOp (\x y -> if x == y then 1 else 0))] Map.empty
+aenv = inserts [(Idt "{-}", ari $ ariOp (-)), 
+                (Idt "{*}", ari $ ariOp (*)),
+                (Idt "{+}", ari $ ariOp (+)), 
+                (Idt "{/}", ari $ AriOp (\x y -> if y /= 0 then Just $ x `div` y else Nothing)),
+                (Idt "{>}", ari $ ariOp (\x y -> if x > y then 1 else 0)),
+                (Idt "{<}", ari $ ariOp (\x y -> if x < y then 1 else 0)),
+                (Idt "{>=}", ari $ ariOp (\x y -> if x >= y then 1 else 0)),
+                (Idt "{<=}", ari $ ariOp (\x y -> if x <= y then 1 else 0)),
+                (Idt "{==}", ari $ ariOp (\x y -> if x == y then 1 else 0))] Map.empty
 
 atenv = inserts [(Idt "{-}", Scheme [] $ TFunc TInt (TFunc TInt TInt)), 
                  (Idt "{*}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
@@ -53,24 +56,24 @@ atenv = inserts [(Idt "{-}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
                  (Idt "{<=}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
                  (Idt "{==}", Scheme [] $ TFunc TInt (TFunc TInt TInt))] Map.empty
 
-cc x = runReader (calc x) aenv
-bb x fname = runReader (bind x) (Map.insert (Idt fname) (EBVar $ Idt fname) aenv)
+cc x = runReaderT (calc x) aenv
+bb x fname = runReaderT (bind x) (Map.insert (Idt fname) (EBVar $ Idt fname) aenv)
 
-getInts :: Map.Map Idt ExpBound -> [(Idt, [Integer])]
+getInts :: Map.Map Idt (Either String ExpBound) -> [(Idt, [Integer])]
 getInts m = [(k, h:t) | (k, Just (h:t)) <- Map.toList $ Map.map f m] where
-    f (EBOverload []) = return []
-    f (EBOverload ((EBInt x):xs)) = fmap (x:) $ f (EBOverload xs)
-    f (EBOverload (x:xs)) = f (EBOverload xs)
-    f (EBInt x) = return [x]
+    f (Right (EBOverload [])) = return []
+    f (Right (EBOverload ((EBInt x):xs))) = fmap (x:) $ f (Right $ EBOverload xs)
+    f (Right (EBOverload (x:xs))) = f (Right $ EBOverload xs)
+    f (Right (EBInt x)) = return [x]
     f _ = Nothing
 
-str_to_calc :: String -> String
+str_to_calc :: String -> Except String String
 str_to_calc x = case pProgram (myLexer x) of
-    Left err -> err
-    Right (Prog es) -> (show tenv) ++ "\n\n===============\n\n" ++ 
+    Left err -> throwError err
+    Right (Prog es) -> return $ (show tenv) ++ "\n\n===============\n\n" ++ 
         (show env) ++ "\n\n========================\n\n" ++ 
-        (show $ Map.map (\x -> runReader (calc x) env) env) ++ "\n\n========================\n\n" ++
-        (show $ getInts $ Map.map (\x -> runReader (calc x) env) env) where
+        (show $ Map.map (\x -> runExcept (runReaderT (calc x) env)) env) ++ "\n\n========================\n\n" ++
+        (show $ getInts $ Map.map (\x -> runExcept (runReaderT (calc x) env)) env) where
         ops = inserts bop (getOps (Prog es))
         (env, tenv) = foldl f (aenv, atenv) es
         f (env, tenv) (DExp name tds exp) = let unbound = (ELet name tds (infixate exp ops) (EVar name)) in
@@ -114,4 +117,29 @@ str_to_calc x = case pProgram (myLexer x) of
         f envs _ = envs
 
 main :: IO ()
-main = interact str_to_calc
+main = do
+    args <- getArgs
+    case args of
+        [fname] -> do
+            file <- readFile fname
+            case runExcept $ str_to_calc file of
+                Left err -> putStrLn err
+                Right res -> putStrLn res
+        _ ->
+            let inputloop = do {
+                putStr "Paweł> ";
+                hFlush stdout;
+                line <- getLine;
+                case line of
+                    ":q" -> return ""
+                    _ -> do
+                        rest <- inputloop
+                        return $ line ++ "\n" ++ rest
+            } in do
+                putStrLn "Welcome to Paweł!"
+                putStrLn "Type :q to quit"
+                unparsed <- inputloop
+                case runExcept $ str_to_calc unparsed of
+                    Left err -> putStrLn err
+                    Right res -> putStrLn res
+                
