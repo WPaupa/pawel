@@ -9,6 +9,7 @@ import Preprocessor
 import Control.Monad.Reader
 import Inference
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 is_typed :: [TypeDecl] -> Bool
 is_typed [] = False
@@ -97,17 +98,19 @@ str_to_calc x = case pProgram (myLexer x) of
                     (typeAssignment, exps) = overloadInference tenv bound name in
                 (Map.insert name exps env, Map.insert name (generalize (TypeEnv tenv) typeAssignment) tenv)
         f envs (DType name tvs []) = envs
-        f (env, tenv) (DType name tvs ((VarType vname ts):t)) = f (
-                let tng [] n = []
-                    tng (h:t) n = (Idt $ "a" ++ show n):tng t (n+1) 
-                    foldFuncs [] acc = acc
-                    foldFuncs (h:t) acc = TFunc h (foldFuncs t acc) 
-                    tns = tng ts 0 in
-                    (
-                        Map.insert vname (EBLam Map.empty tns (EBVariant vname (map EBVar tns))) env,
-                        Map.insert vname (Scheme tvs $ foldFuncs ts $ TVariant name ts) tenv
-                    )
-            ) (DType name tvs t)
+        f (env, tenv) (DType name tvs ((VarType vname ts):t)) = 
+            if all (flip elem tvs) (Set.elems $ ftv $ TVariant vname ts) then f (
+                    let tng [] n = []
+                        tng (h:t) n = (Idt $ "a" ++ show n):tng t (n+1) 
+                        foldFuncs [] acc = acc
+                        foldFuncs (h:t) acc = TFunc h (foldFuncs t acc) 
+                        tns = tng ts 0 in
+                        (
+                            Map.insert vname (EBLam Map.empty tns (EBVariant vname (map EBVar tns))) env,
+                            Map.insert vname (Scheme tvs $ foldFuncs ts $ TVariant name ts) tenv
+                        )
+                ) (DType name tvs t)
+            else error "Unbound type variable in type definition"
         f envs _ = envs
 
 main :: IO ()
