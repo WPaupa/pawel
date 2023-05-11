@@ -5,6 +5,7 @@ import qualified Data.Set as Set
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
+import MatchChecker
 import qualified Text.PrettyPrint as PP
 import AbsPawel
 
@@ -54,13 +55,11 @@ unfunify :: Type -> Type
 unfunify (TFunc t1 t2) = unfunify t2
 unfunify t = t
 
-data TIEnv = TIEnv  {}
 data TIState = TIState { tiSupply :: Int }
-type TI a = ErrorT String (ReaderT TIEnv (State TIState)) a
-runTI :: TI a -> (Either String a, TIState)
-runTI t = runState (runReaderT (runErrorT t) initTIEnv) initTIState
-  where initTIEnv = TIEnv
-        initTIState = TIState{tiSupply = 0}
+type TI a = ErrorT String (ReaderT VariantEnv (State TIState)) a
+runTI :: VariantEnv -> TI a -> (Either String a, TIState)
+runTI env t = runState (runReaderT (runErrorT t) env) $ TIState{tiSupply = 0}
+
 newTyVar :: String -> TI Type
 newTyVar prefix =
     do  s <- get
@@ -85,12 +84,13 @@ mgu TInt (TFunc (TFunc t1 t2) b) =  do  s1 <- mgu (TFunc t1 t2) b
                                         return (s1 `composeSubst` s2)
 mgu TInt (TFunc (TVar a) b)    =  mgu (TVar a) b
 mgu t1 TInt                    =  mgu TInt t1
-mgu (TVariant (Idt name) types) (TVariant (Idt name') types') 
-    | length types == length types' = foldM (\s (t1, t2) -> do {
+mgu (TVariant name types) (TVariant name' types') 
+    | (length types == length types') && (name == name') = foldM (\s (t1, t2) -> do {
             s1 <- mgu t1 t2; 
             return (s `composeSubst` s1)
         }) nullSubst (zip types types')
-    | otherwise = throwError $ "TypeError, expected " ++ (show $ length types) ++ "arguments, got " ++ (show $ length types')
+    | otherwise = throwError $ "TypeError, variant types " ++ show name ++ "(" ++ (show $ length types) ++ ") and " 
+        ++ show name' ++ "(" ++ (show $ length types') ++ ") do not match"
 mgu (TVariant name types) (TFunc t1 t2) = throwError "TypeError: variant application not yet implemented"
 mgu t1 t2                      =  throwError $ "types do not unify: " ++ show t1 ++ 
                                   " vs. " ++ show t2
@@ -173,26 +173,22 @@ ti env (EBLam lenv (n:t) e) =
         (s1, t1) <- ti env'' (EBLam lenv t e)
         return (s1, TFunc (apply s1 tv) t1)
 ti env@(TypeEnv env') (EBMatch x cases) = 
-    let getTypeAndUnify match typ = case Map.lookup match env' of
+    let consargs (TFunc t1 t2) = t1:(consargs t2)
+        consargs _ = []
+        getTypeAndUnify match typ = case Map.lookup match env' of
             Nothing -> throwError $ "unbound variant constructor: " ++ show match
             Just sigma -> do 
                 t <- instantiate sigma
                 case unfunify t of 
-                    (TVariant name ts) -> mgu (unfunify t) typ
+                    (TVariant name ts) -> fmap (\x -> ((consargs t), x)) (mgu (unfunify t) typ)
                     _ -> throwError $ "expected variant constructor, got " ++ show (unfunify t)
         doMatch (MVar n) (TypeEnv env) xtype =
             return (nullSubst, TypeEnv (Map.insert n (Scheme [] xtype) env))
         doMatch (MCons name ms) (TypeEnv env) xtype = case xtype of
-            (TVariant name' ts) -> if length ms /= length ts
-                then 
-                    throwError $ "TypeError, expected " ++ (show $ length ms) ++ "arguments, got " ++ (show $ length ts)
-                else
-                    foldM (\(s, e) (m, t) -> do (s', e') <- doMatch m e (apply s t); return (s' `composeSubst` s, e')) (nullSubst, TypeEnv env) (zip ms ts)
-            TVar xvar -> do
-                s <- getTypeAndUnify name xtype
-                let TVariant name' ts = apply s xtype in
-                    foldM (\(s, e) (m, t) -> do (s', e') <- doMatch m e (apply s t); return (s' `composeSubst` s, e')) (s, apply s (TypeEnv env)) (zip ms ts)
-            _ -> throwError $ "expected variant type, got " ++ show xtype
+            TFunc _ _ -> throwError $ "expected variant type, got " ++ show xtype
+            _ -> do
+                (ts, s) <- getTypeAndUnify name xtype
+                foldM (\(s, e) (m, t) -> do (s', e') <- doMatch m e (apply s t); return (s' `composeSubst` s, e')) (s, apply s (TypeEnv env)) (zip ms ts)
         f (xtype, s, t) (CaseBound match e) = do {
             (sE, mEnv) <- doMatch match (apply s env) xtype;
             (s', t') <- ti mEnv e;
@@ -236,18 +232,18 @@ recurrentInference env e name@(Idt name') = do
     s' <- mgu (apply s t) (apply s tv)
     return (apply (s' `composeSubst` s) t)
 
-overloadInference :: Map.Map Idt Scheme -> ExpBound -> Idt -> (Type, ExpBound)
-overloadInference env (EBOverload xs) name = 
+overloadInference :: Map.Map Idt Scheme -> VariantEnv -> ExpBound -> Idt -> (Type, ExpBound)
+overloadInference env venv (EBOverload xs) name = 
     let unpair [] = ([], [])
         unpair ((h1, h2):t) = let (t1, t2) = unpair t in (h1:t1, h2:t2) 
         k = [(t, x) | (Right t, x) <- map 
-                (\x -> let (res, _) = runTI (recurrentInference env x name) in (res, x)) 
+                (\x -> let (res, _) = runTI venv (recurrentInference env x name) in (res, x)) 
             xs] in
         case unpair k of
             ([], []) -> error "no typeable overload"
             (types, xs) -> (TOverload types, EBOverload xs)
-overloadInference env e name = 
-    let (res, _) = runTI (recurrentInference env e name) in
+overloadInference env venv e name = 
+    let (res, _) = runTI venv (recurrentInference env e name) in
         case res of 
             Left err -> error err
             Right t -> (t, e)
@@ -257,12 +253,3 @@ sumTypes (TOverload ts) (TOverload ts') = TOverload (ts ++ ts')
 sumTypes (TOverload ts) t = TOverload (ts ++ [t])
 sumTypes t (TOverload ts) = TOverload (t:ts)
 sumTypes t t' = TOverload [t, t']
-
-test :: ExpBound -> IO ()
-test e =
-    let (res, _) = runTI (typeInference Map.empty e) in
-        case res of
-          Left err  ->  putStrLn $ show e ++ "\n " ++ err ++ "\n"
-          Right t   ->  putStrLn $ show e ++ " :: " ++ show t ++ "\n"
-
-testRec name e = fst $ runTI (recurrentInference Map.empty e name)

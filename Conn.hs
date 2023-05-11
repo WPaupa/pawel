@@ -6,6 +6,7 @@ import AbsPawel
 import Binder
 import OpParser
 import Preprocessor
+import MatchChecker
 import Control.Monad.Reader
 import Control.Monad.Except
 import Inference
@@ -72,36 +73,43 @@ str_to_calc x = case pProgram (myLexer x) of
     Left err -> throwError err
     Right (Prog es) -> return $ (show tenv) ++ "\n\n===============\n\n" ++ 
         (show env) ++ "\n\n========================\n\n" ++ 
+        (show venv) ++ "\n\n========================\n\n" ++
         (show $ Map.map (\x -> runExcept (runReaderT (calc x) env)) env) ++ "\n\n========================\n\n" ++
         (show $ getInts $ Map.map (\x -> runExcept (runReaderT (calc x) env)) env) where
         ops = inserts bop (getOps (Prog es))
-        (env, tenv) = foldl f (aenv, atenv) es
-        f (env, tenv) (DExp name tds exp) = let unbound = (ELet name tds (infixate exp ops) (EVar name)) in
+        (env, tenv, venv) = foldl f (aenv, atenv, emptyEnv) es
+        f (env, tenv, venv) (DExp name tds exp) = let unbound = (ELet name tds (infixate exp ops) (EVar name)) in
             if is_typed tds then
-                let bound = bindRecurrent unbound name env 
+                let bound = bindRecurrent (bindZeroargMatches unbound (venv, tenv)) name env 
                     current = case Map.lookup name tenv of
                         Just (Scheme vars t) -> t
                         Nothing -> TOverload []
-                    (boundType, exps) = overloadInference tenv bound name 
+                    (boundType, exps) = overloadInference tenv venv bound name 
                     fullScheme = generalize (TypeEnv tenv) (sumTypes current boundType)
                     bounds = expToList exps in
                     case Map.lookup name env of
                         Just (EBOverload xs) -> 
                             (
                                 Map.insert name (EBOverload $ xs ++ bounds) env, 
-                                Map.insert name fullScheme tenv
+                                Map.insert name fullScheme tenv,
+                                venv
                             )
                         _ -> 
                             (
                                 Map.insert name (EBOverload bounds) env, 
-                                Map.insert name fullScheme tenv
+                                Map.insert name fullScheme tenv,
+                                venv
                             )
             else
-                let bound = bindRecurrent unbound name env
-                    (typeAssignment, exps) = overloadInference tenv bound name in
-                (Map.insert name exps env, Map.insert name (generalize (TypeEnv tenv) typeAssignment) tenv)
+                let bound = bindRecurrent (bindZeroargMatches unbound (venv, tenv)) name env
+                    (typeAssignment, exps) = overloadInference tenv venv bound name in
+                (
+                    Map.insert name exps env, 
+                    Map.insert name (generalize (TypeEnv tenv) typeAssignment) tenv, 
+                    venv
+                )
         f envs (DType name tvs []) = envs
-        f (env, tenv) (DType name tvs ((VarType vname ts):t)) = 
+        f (env, tenv, venv) (DType name tvs ((VarType vname ts):t)) = 
             if all (flip elem tvs) (Set.elems $ ftv $ TVariant vname ts) then f (
                     let tng [] n = []
                         tng (h:t) n = (Idt $ "a" ++ show n):tng t (n+1) 
@@ -110,7 +118,8 @@ str_to_calc x = case pProgram (myLexer x) of
                         tns = tng ts 0 in
                         (
                             Map.insert vname (EBLam Map.empty tns (EBVariant vname (map EBVar tns))) env,
-                            Map.insert vname (Scheme tvs $ foldFuncs ts $ TVariant name ts) tenv
+                            Map.insert vname (Scheme tvs $ foldFuncs ts $ TVariant name (map TVar tvs)) tenv,
+                            insertCons vname (Scheme tvs $ TVariant name (map TVar tvs)) venv
                         )
                 ) (DType name tvs t)
             else error "Unbound type variable in type definition"
