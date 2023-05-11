@@ -55,13 +55,13 @@ atenv = inserts [(Idt "{-}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
 cc x = runReader (calc x) aenv
 bb x fname = runReader (bind x) (Map.insert (Idt fname) (EBVar $ Idt fname) aenv)
 
--- getInts :: Map.Map Idt (Either Integer ExpBound) -> Map.Map Idt Integer
-getInts m = [(k, x) | (k, Left x) <- Map.toList $ Map.map f m] where
--- getInts = id where
-    f (Right (EBOverload [])) = Right $ EBVar $ Idt "_"
-    f (Right (EBOverload ((EBInt x):xs))) = Left x
-    f (Right (EBOverload (x:xs))) = f (Right (EBOverload xs))
-    f x = x
+getInts :: Map.Map Idt ExpBound -> [(Idt, [Integer])]
+getInts m = [(k, h:t) | (k, Just (h:t)) <- Map.toList $ Map.map f m] where
+    f (EBOverload []) = return []
+    f (EBOverload ((EBInt x):xs)) = fmap (x:) $ f (EBOverload xs)
+    f (EBOverload (x:xs)) = f (EBOverload xs)
+    f (EBInt x) = return [x]
+    f _ = Nothing
 
 str_to_calc :: String -> String
 str_to_calc x = case pProgram (myLexer x) of
