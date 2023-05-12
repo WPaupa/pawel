@@ -44,7 +44,7 @@ data TypeDecl = TDVar Idt | TDType Idt Type
     deriving (Eq, Ord, Show, Read)
 
 newtype Idt = Idt String
-    deriving (Eq, Ord, Read, Data.String.IsString)
+    deriving (Eq, Ord, Read)
 instance Show Idt where
     show (Idt x) = x
 

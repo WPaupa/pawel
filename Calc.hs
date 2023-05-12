@@ -135,6 +135,7 @@ calc (EBArith x y (AriOp f)) = do
             (Just nl', Just nr') -> calcF f nl' nr'
             _ -> return $ EBArith nl nr (AriOp f)
   where
+    calcF :: (Integer -> Integer -> Maybe Integer) -> Integer -> Integer -> ReaderT BEnv (Except String) ExpBound
     calcF f x y = case f x y of
         Just x -> return $ EBInt x
         Nothing -> throwError "Arithmetic error"
