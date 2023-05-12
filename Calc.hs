@@ -148,7 +148,7 @@ calc (EOVar pos x) = do
 match :: Idt -> Match -> [ExpBound] -> Maybe [(Idt, ExpBound)]
 match q (MVar x) l = Just [(x, EBVariant q l)]
 match q (MCons x xs) ys
-    | length xs == length ys = monadicFold (\a b -> a ++ b) [] $ zipWith match' xs ys
+    | (length xs == length ys) && (q == x) = monadicFold (\a b -> a ++ b) [] $ zipWith match' xs ys
     | otherwise = Nothing
 
 match' :: Match -> ExpBound -> Maybe [(Idt, ExpBound)]

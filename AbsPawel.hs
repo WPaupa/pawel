@@ -120,10 +120,10 @@ prExp (EBLet x tds e1 e2) =
     PP.<+> prExp e1 
     PP.<+> PP.text "in" 
     PP.$$ PP.nest 2 (prExp e2)
-prExp (EBLam env [] e) = PP.text "\\_." PP.<+> prExp e
+prExp (EBLam env [] e) = PP.text "\955_." PP.<+> prExp e
 prExp (EBLam env xs e) = 
-    PP.text "\\" 
-    PP.<+> PP.hcat (PP.punctuate PP.comma (map PP.text (map show xs))) 
+    PP.text "\955" 
+    PP.<+> PP.hcat (PP.punctuate (PP.text " ") (map PP.text (map show xs))) 
     PP.<+> PP.text "." 
     PP.<+> prExp e
 prExp (EBMatch x cs) = 
@@ -134,7 +134,7 @@ prExp (EBMatch x cs) =
 prExp (EBApp e1 e2) = prParenExp e1 PP.<+> prParenExp e2
 prExp (EBOverload xs) = 
     PP.text "overload" 
-    PP.<+> PP.parens (PP.hcat (PP.punctuate PP.comma (map prExp xs)))
+    PP.<+> PP.parens (PP.cat (PP.punctuate PP.comma (map prExp xs)))
 prExp (EBArith e1 e2 op) = 
     prParenExp e1 
     PP.<+> PP.text (show op) 
@@ -149,7 +149,7 @@ prMatchCase (CaseBound m e) =
 prMatch :: Match -> PP.Doc
 prMatch (MCons x xs) = 
     PP.text (show x) 
-    PP.<+> PP.hcat (PP.punctuate PP.comma (map prParenMatch xs))
+    PP.<+> PP.hcat (PP.punctuate (PP.text " ") (map prParenMatch xs))
 prMatch (MVar x) = PP.text (show x)
 
 prParenMatch :: Match -> PP.Doc
@@ -184,7 +184,7 @@ prType (TVariant n ts) =
     PP.<> PP.parens (PP.hcat (PP.punctuate PP.comma (map prType ts)))
 prType (TOverload ts) = 
     PP.text "overload" 
-    PP.<> PP.parens (PP.hcat (PP.punctuate PP.comma (map prType ts)))
+    PP.<> PP.parens (PP.cat (PP.punctuate PP.comma (map prType ts)))
 
 prParenType :: Type -> PP.Doc
 prParenType t = case t of
@@ -197,7 +197,7 @@ instance Show Scheme where
 
 prScheme :: Scheme -> PP.Doc
 prScheme (Scheme vars t) =
-    PP.text "All"
+    PP.text "Forall"
     PP.<+> PP.hcat (PP.punctuate PP.comma (map PP.text $ map show vars))
     PP.<> PP.text "."
     PP.<+> prType t

@@ -62,7 +62,7 @@ infixateMatch (MList ms) ops = infixateMatchOps ms ops
 infixateMatch (MCons x ms) ops = fmap (MCons x) (mapM (flip infixateMatch ops) ms)
 
 infixateOps :: [Exp] -> OpEnv -> Except String Exp
-infixateOps [] ops = throwError "infixateOps: empty list"
+infixateOps [] ops = throwError "Empty expression"
 infixateOps [e] ops = if isOp e ops then throwError "operator without arguments" else infixate e ops
 infixateOps [e1, e2] ops =
     if isOp e1 ops || isOp e2 ops
@@ -124,7 +124,7 @@ infixateOps (e1 : e2 : e3 : e4 : es) ops =
             infixateOps (e12' : e3 : e4 : es) ops
 
 infixateMatchOps :: [Match] -> OpEnv -> Except String Match
-infixateMatchOps [] ops = throwError "infixateMatchOps: empty list"
+infixateMatchOps [] ops = throwError "Empty match"
 infixateMatchOps [m] ops = if isOpM m ops then throwError "operator without arguments" else infixateMatch m ops
 infixateMatchOps [m1, m2] ops =
     if isOpM m1 ops || isOpM m2 ops
