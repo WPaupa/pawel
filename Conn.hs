@@ -32,11 +32,23 @@ expToList :: ExpBound -> [ExpBound]
 expToList (EBOverload xs) = xs
 expToList x = [x]
 
-bop = [(Idt "+", (Idt "{+}", 5, 1)), 
-       (Idt "-", (Idt "{-}", 5, 1)),
+bop = [(Idt "$", (Idt "{$}", 0, -1)),
+       (Idt "||", (Idt "{||}", 2, -1)),
+       (Idt "&&", (Idt "{&&}", 3, -1)),
+       (Idt "==", (Idt "{==}", 4, -1)),
+       (Idt "/=", (Idt "{/=}", 4, -1)),
+       (Idt "<", (Idt "{<}", 4, -1)),
+       (Idt ">", (Idt "{>}", 4, -1)),
+       (Idt "<=", (Idt "{<=}", 4, -1)),
+       (Idt ">=", (Idt "{>=}", 4, -1)),
+       (Idt ",", (Idt "Cons", 0, -1)),
+       (Idt ":", (Idt "Cons", 5, -1)),
+       (Idt "++", (Idt "{++}", 5, -1)),
+       (Idt "+", (Idt "{+}", 6, 1)), 
+       (Idt "-", (Idt "{-}", 6, 1)),
        (Idt "/", (Idt "{/}", 7, 1)),
        (Idt "*", (Idt "{*}", 7, 1)), 
-       (Idt ",", (Idt "Cons", 3, -1))]
+       (Idt "^", (Idt "{^}", 8, -1))]
 
 aenv = inserts [(Idt "{-}", ari $ ariOp (-)), 
                 (Idt "{*}", ari $ ariOp (*)),
@@ -80,7 +92,7 @@ processDecl (env, tenv, venv, ops) (DExp name tds exp) = let unbound = (ELet nam
             current = case Map.lookup name tenv of
                 Just (Scheme vars t) -> t
                 Nothing -> TOverload [] in do
-                    (boundType, exps) <- overloadInference tenv venv bound name 
+                    (boundType, exps) <- fmap overloadify $ overloadInference tenv venv bound name 
                     calcedExp <- runReaderT (calc exps) env
                     let bounds = expToList calcedExp in
                         case Map.lookup name env of

@@ -248,7 +248,11 @@ overloadInference env venv e name =
     let (res, _) = runTI venv (recurrentInference env e name) in
         case res of 
             Left err -> throwError err
-            Right t -> return (TOverload [t], EBOverload [e])
+            Right t -> return (t, e)
+
+overloadify :: (Type, ExpBound) -> (Type, ExpBound)
+overloadify (TOverload ts, EBOverload xs) = (TOverload ts, EBOverload xs)
+overloadify (t, e) = (TOverload [t], EBOverload [e])
 
 sumTypes :: Type -> Type -> Type
 sumTypes (TOverload ts) (TOverload ts') = TOverload (ts ++ ts')

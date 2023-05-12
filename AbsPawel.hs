@@ -86,7 +86,7 @@ instance Show AriOp where
             Just 0 -> ">"
         Just 0 -> case f 15 15 of
             Just 1 -> case f 15 16 of
-                Just 1 -> "<"
+                Just 1 -> "<="
                 Just 0 -> "=="
             Just 0 -> "<"
 instance Eq AriOp where

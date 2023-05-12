@@ -69,7 +69,7 @@ calc (EBIf e1 e2 e3) = do
         _ -> return $ EBIf e1' e2 e3
 calc (EBLet x t e1 e2) = do
     env <- ask
-    local (insert x $ EBLam env (map untype t) e1) (calc e2)
+    local (insert x $ EBLam (insert x (EBVar x) env) (map untype t) e1) (calc e2) -- jeśli mam dostęp, to łatwo
 calc (EBLam env [] e) = local (envSubstitute env) $ calc e
 calc (EBLam env x e) = do
     env' <- ask
