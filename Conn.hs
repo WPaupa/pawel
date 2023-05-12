@@ -86,7 +86,8 @@ emptyEnvs :: FullEnv
 emptyEnvs = (aenv, atenv, emptyEnv, Map.fromList bop)
 
 processDecl :: FullEnv -> Decl -> Except String FullEnv
-processDecl (env, tenv, venv, ops) (DExp name tds exp) = let unbound = (ELet name tds (infixate exp ops) (EVar name)) in
+processDecl (env, tenv, venv, ops) (DExp name tds exp) = do
+    unbound <- fmap (\infd -> ELet name tds infd (EVar name)) $ infixate exp ops
     if is_typed tds then
         let bound = bindRecurrent (bindZeroargMatches unbound (venv, tenv)) name env 
             current = case Map.lookup name tenv of
