@@ -61,6 +61,7 @@ data ExpBound
     | EBLet Idt [TypeDecl] ExpBound ExpBound
     | EBLam BEnv [Idt] ExpBound
     | EBMatch Idt [MatchCaseBound]
+    | EOMatch Int Idt [MatchCaseBound]
     | EBApp ExpBound ExpBound
     | EBOverload [ExpBound]
     | EBArith ExpBound ExpBound AriOp
@@ -84,11 +85,21 @@ instance Show AriOp where
                 Just 0 -> "=="
             Just 0 -> "<"
 instance Eq AriOp where
-    _ == _ = True
+    a == b = show a == show b
 instance Ord AriOp where
-    compare _ _ = EQ
+    compare a b = compare (show a) (show b)
 instance Read AriOp where
-    readsPrec _ _ = []
+    readsPrec a b = case b of
+        "+" -> [(ariOp (+), "")]
+        "-" -> [(ariOp (-), "")]
+        "*" -> [(ariOp (*), "")]
+        "/" -> [(ariOp div, "")]
+        ">=" -> [(ariOp (\x y -> if x >= y then 1 else 0), "")]
+        ">" -> [(ariOp (\x y -> if x > y then 1 else 0), "")]
+        "<=" -> [(ariOp (\x y -> if x <= y then 1 else 0), "")]
+        "<" -> [(ariOp (\x y -> if x < y then 1 else 0), "")]
+        "==" -> [(ariOp (\x y -> if x == y then 1 else 0), "")]
+        _ -> []
 ariOp f = AriOp (\x y -> Just $ f x y)
 ari f = EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt "y") f
 
@@ -126,6 +137,7 @@ prExp (EBLam env xs e) =
     PP.<+> PP.hcat (PP.punctuate (PP.text " ") (map PP.text (map show xs))) 
     PP.<+> PP.text "." 
     PP.<+> prExp e
+prExp (EOMatch n x cs) = prExp (EBMatch x cs)
 prExp (EBMatch x cs) = 
     PP.text "match"
     PP.<+> PP.text (show x)

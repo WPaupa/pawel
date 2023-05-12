@@ -189,7 +189,36 @@ ti env (EBLam lenv (n : t) e) = do
         env'' = TypeEnv (env' `Map.union` (Map.singleton n (Scheme [] tv)))
     (s1, t1) <- ti env'' (EBLam lenv t e)
     return (s1, TFunc (apply s1 tv) t1)
+ti env@(TypeEnv env') (EOMatch pos x cases) =
+    case Map.lookup x env' of
+        Nothing -> throwError $ "unbound variable: " ++ show x
+        Just sigma -> do
+            t <- instantiate sigma
+            case t of
+                TOverload ts -> inferMatch env cases (ts !! pos)
+                _ -> throwError $ "expected overloaded type, got " ++ show t
 ti env@(TypeEnv env') (EBMatch x cases) =
+    case Map.lookup x env' of
+        Nothing -> throwError $ "unbound variable: " ++ show x
+        Just sigma -> do
+            t <- instantiate sigma
+            inferMatch env cases t
+ti env exp@(EBApp e1 e2) = do
+    tv <- newTyVar "a"
+    (s1, t1) <- ti env e1
+    (s2, t2) <- ti (apply s1 env) e2
+    s3 <- mgu (apply s2 t1) (TFunc t2 tv)
+    return (s3 `composeSubst` s2 `composeSubst` s1, apply s3 tv)
+    `catchError` \e -> throwError $ e ++ "\n in " ++ show exp
+ti env (EBArith e1 e2 op) = do
+    (s1, t1) <- ti env e1
+    (s2, t2) <- ti (apply s1 env) e2
+    s3 <- haveItBeInt (apply (s2 `composeSubst` s1) t1)
+    s4 <- haveItBeInt (apply (s3 `composeSubst` s2 `composeSubst` s1) t2)
+    return (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1, TInt)
+
+inferMatch :: TypeEnv -> [MatchCaseBound] -> Type -> TI (Subst, Type)
+inferMatch env@(TypeEnv env') cases t =
     let consargs (TFunc t1 t2) = t1 : (consargs t2)
         consargs _ = []
         getTypeAndUnify match typ = case Map.lookup match env' of
@@ -218,24 +247,7 @@ ti env@(TypeEnv env') (EBMatch x cases) =
                     Just t'' -> do
                         sF <- mgu (apply s'' t'') (apply s'' t')
                         return (apply (sF `composeSubst` s'') xtype, sF `composeSubst` s'', Just $ apply (sF `composeSubst` s'') t'')
-     in case Map.lookup x env' of
-            Nothing -> throwError $ "unbound variable: " ++ show x
-            Just sigma -> do
-                t <- instantiate sigma
-                foldM f (t, nullSubst, Nothing) cases >>= \(xtype, s, Just t) -> return (s, t)
-ti env exp@(EBApp e1 e2) = do
-    tv <- newTyVar "a"
-    (s1, t1) <- ti env e1
-    (s2, t2) <- ti (apply s1 env) e2
-    s3 <- mgu (apply s2 t1) (TFunc t2 tv)
-    return (s3 `composeSubst` s2 `composeSubst` s1, apply s3 tv)
-    `catchError` \e -> throwError $ e ++ "\n in " ++ show exp
-ti env (EBArith e1 e2 op) = do
-    (s1, t1) <- ti env e1
-    (s2, t2) <- ti (apply s1 env) e2
-    s3 <- haveItBeInt (apply (s2 `composeSubst` s1) t1)
-    s4 <- haveItBeInt (apply (s3 `composeSubst` s2 `composeSubst` s1) t2)
-    return (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1, TInt)
+     in foldM f (t, nullSubst, Nothing) cases >>= \(xtype, s, Just t) -> return (s, t)
 
 typeInference :: Map.Map Idt Scheme -> ExpBound -> TI Type
 typeInference env e = do

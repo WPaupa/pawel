@@ -89,24 +89,25 @@ calc (EBApp e1 e2) = do
         _ -> return $ EBApp e1' e2'
 calc (EBOverload xs) = mapM calc xs >>= return . flattenExp
 calc (EBVariant x xs) = mapM calc xs >>= return . EBVariant x
+calc (EOMatch n x []) = throwError "Match error"
+calc (EOMatch n x (CaseBound m e : t)) = do
+    env <- ask
+    case lookup x env of
+        Nothing -> return $ EOMatch n x (CaseBound m e : t)
+        Just (EBOverload xs) -> do
+            xv <- calc (xs !! n)
+            calcMatch m e x t xv
+        Just x' -> do
+            xv <- calc x'
+            calcMatch m e x t xv
 calc (EBMatch x []) = throwError "Match error"
 calc (EBMatch x (CaseBound m e : t)) = do
     env <- ask
     case lookup x env of
         Just x' -> do
             xv <- calc x'
-            calcMatch xv
+            calcMatch m e x t xv
         Nothing -> return $ EBMatch x (CaseBound m e : t)
-  where
-    calcMatch x' =
-        case x' of
-            EBVariant y ys -> case match y m ys of
-                Nothing -> calc $ EBMatch x t
-                Just kvs -> local (inserts kvs) (calc e)
-            EBOverload xs -> fmap flattenExp $ mapM calcMatch xs
-            x'' -> case m of
-                MVar y -> local (insert y x'') (calc e)
-                _ -> return $ EBMatch x (CaseBound m e : t)
 calc (EBArith x y (AriOp f)) = do
     x' <- calc x
     y' <- calc y
@@ -144,6 +145,17 @@ calc (EOVar pos x) = do
         Nothing -> return $ EOVar pos x
         Just (EBOverload xs) -> calc $ xs !! pos
         Just x -> return x
+
+calcMatch :: Match -> ExpBound -> Idt -> [MatchCaseBound] -> ExpBound -> ReaderT BEnv (Except String) ExpBound
+calcMatch m e x t x' =
+    case x' of
+        EBVariant y ys -> case match y m ys of
+            Nothing -> calc $ EBMatch x t
+            Just kvs -> local (inserts kvs) (calc e)
+        EBOverload xs -> fmap flattenExp $ mapM (calcMatch m e x t) xs
+        x'' -> case m of
+            MVar y -> local (insert y x'') (calc e)
+            _ -> return $ EBMatch x (CaseBound m e : t)
 
 match :: Idt -> Match -> [ExpBound] -> Maybe [(Idt, ExpBound)]
 match q (MVar x) l = Just [(x, EBVariant q l)]

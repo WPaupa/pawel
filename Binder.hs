@@ -87,16 +87,22 @@ bind (EMatch x mcs) =
             case e' of
                 EBOverload es -> return $ CaseBoundOverload $ map (\e -> CaseBound p e) es
                 _ -> return $ CaseBound p e'
-        bindMCs [] = return $ EBMatch x []
-        bindMCs (h : t) = do
+        fromMatch (EBMatch x ts) = ts
+        fromMatch (EOMatch pos x ts) = ts
+        bindMCs f [] = return $ f []
+        bindMCs f (h : t) = do
             h' <- bindMC h
-            t' <- bindMCs t
+            t' <- bindMCs f t
             case (h', t') of
-                (CaseBound m e, EBMatch x' ts) -> return $ EBMatch x' $ (CaseBound m e) : ts
-                (CaseBoundOverload hs, EBMatch x' ts) -> bubble $ map (\c -> return $ EBMatch x' $ c : ts) hs
-                (CaseBound m e, EBOverload ts) -> bubble $ map (\(EBMatch x' ms) -> return $ EBMatch x' $ (CaseBound m e) : ms) ts
-                (CaseBoundOverload hs, EBOverload ts) -> bubble $ map (\(EBMatch x' ms) -> bubble $ map (\c -> return $ EBMatch x' $ c : ms) hs) ts
-     in bindMCs mcs
+                (CaseBoundOverload hs, EBOverload ts) -> bubble $ map (\ms -> bubble $ map (\c -> return $ f $ c : (fromMatch ms)) hs) ts
+                (CaseBound m e, EBOverload ts) -> bubble $ map (\ms -> return $ f $ (CaseBound m e) : (fromMatch ms)) ts
+                (CaseBoundOverload hs, _) -> bubble $ map (\c -> return $ f $ c : (fromMatch t')) hs
+                (CaseBound m e, _) -> return $ f $ (CaseBound m e) : (fromMatch t')
+     in do
+        env <- ask
+        case lookup x env of
+            Just (EBOverload xs) -> bubble $ map (\y -> bindMCs (EOMatch y x) mcs) [0 .. (length xs - 1)]
+            _ -> bindMCs (EBMatch x) mcs
 
 addOverloadNumber :: Idt -> Int -> ExpBound -> ExpBound
 addOverloadNumber name n (EBVar name') = if name == name' then EOVar n name else EBVar name'
