@@ -20,13 +20,6 @@ is_typed [] = False
 is_typed ((TDVar _) : t) = is_typed t
 is_typed ((TDType _ _) : t) = True
 
-isLeft :: Either a b -> Bool
-isLeft (Left a) = True
-isLeft (Right a) = False
-
-fromLeft :: Either a b -> a
-fromLeft (Left a) = a
-
 expToList :: ExpBound -> [ExpBound]
 expToList (EBOverload xs) = xs
 expToList x = [x]
@@ -51,45 +44,29 @@ bop =
       (Idt "^", (Idt "{^}", 8, -1))
     ]
 
-aenv =
-    inserts
-        [ (Idt "{-}", ari $ ariOp (-)),
-          (Idt "{*}", ari $ ariOp (*)),
-          (Idt "{+}", ari $ ariOp (+)),
-          (Idt "{/}", ari $ AriOp (\x y -> if y /= 0 then Just $ x `div` y else Nothing)),
-          (Idt "{>}", ari $ ariOp (\x y -> if x > y then 1 else 0)),
-          (Idt "{<}", ari $ ariOp (\x y -> if x < y then 1 else 0)),
-          (Idt "{>=}", ari $ ariOp (\x y -> if x >= y then 1 else 0)),
-          (Idt "{<=}", ari $ ariOp (\x y -> if x <= y then 1 else 0)),
-          (Idt "{==}", ari $ ariOp (\x y -> if x == y then 1 else 0))
-        ]
-        Map.empty
+aenv = Map.fromList
+    [   (Idt "{-}", ari $ ariOp (-)),
+        (Idt "{*}", ari $ ariOp (*)),
+        (Idt "{+}", ari $ ariOp (+)),
+        (Idt "{/}", ari $ AriOp (\x y -> if y /= 0 then Just $ x `div` y else Nothing)),
+        (Idt "{>}", ari $ ariOp (\x y -> if x > y then 1 else 0)),
+        (Idt "{<}", ari $ ariOp (\x y -> if x < y then 1 else 0)),
+        (Idt "{>=}", ari $ ariOp (\x y -> if x >= y then 1 else 0)),
+        (Idt "{<=}", ari $ ariOp (\x y -> if x <= y then 1 else 0)),
+        (Idt "{==}", ari $ ariOp (\x y -> if x == y then 1 else 0))
+    ]
 
-atenv =
-    inserts
-        [ (Idt "{-}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
-          (Idt "{*}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
-          (Idt "{+}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
-          (Idt "{/}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
-          (Idt "{>}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
-          (Idt "{<}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
-          (Idt "{>=}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
-          (Idt "{<=}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
-          (Idt "{==}", Scheme [] $ TFunc TInt (TFunc TInt TInt))
-        ]
-        Map.empty
-
-cc x = runReaderT (calc x) aenv
-bb x fname = runReaderT (bind x) (Map.insert (Idt fname) (EBVar $ Idt fname) aenv)
-
-getInts :: Map.Map Idt (Either String ExpBound) -> [(Idt, [Integer])]
-getInts m = [(k, h : t) | (k, Just (h : t)) <- Map.toList $ Map.map f m]
-  where
-    f (Right (EBOverload [])) = return []
-    f (Right (EBOverload ((EBInt x) : xs))) = fmap (x :) $ f (Right $ EBOverload xs)
-    f (Right (EBOverload (x : xs))) = f (Right $ EBOverload xs)
-    f (Right (EBInt x)) = return [x]
-    f _ = Nothing
+atenv = Map.fromList
+    [   (Idt "{-}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
+        (Idt "{*}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
+        (Idt "{+}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
+        (Idt "{/}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
+        (Idt "{>}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
+        (Idt "{<}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
+        (Idt "{>=}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
+        (Idt "{<=}", Scheme [] $ TFunc TInt (TFunc TInt TInt)),
+        (Idt "{==}", Scheme [] $ TFunc TInt (TFunc TInt TInt))
+    ]
 
 type FullEnv = (BEnv, Map.Map Idt Scheme, VariantEnv, Map.Map Idt (Idt, Integer, Integer))
 emptyEnvs :: FullEnv
@@ -156,25 +133,6 @@ processDecl (env, tenv, venv, ops) (DType name tvs ((VarType vname ts) : t)) =
 processDecl (env, tenv, venv, ops) (DLOp prec op sem) = return (env, tenv, venv, Map.insert op (sem, prec, -1) ops)
 processDecl (env, tenv, venv, ops) (DROp prec op sem) = return (env, tenv, venv, Map.insert op (sem, prec, 1) ops)
 
-str_to_calc :: String -> Except String String
-str_to_calc x = case pProgram (myLexer x) of
-    Left err -> throwError err
-    Right (Prog es) ->
-        let envs = foldM processDecl emptyEnvs es
-         in do
-                (env, tenv, venv, ops) <- envs
-                return $
-                    (show tenv)
-                        ++ "\n\n===============\n\n"
-                        ++ (show env)
-                        ++ "\n\n========================\n\n"
-                        ++ (show venv)
-                        ++ "\n\n========================\n\n"
-                        ++ (show $ Map.map (\x -> runExcept (runReaderT (calc x) env)) env)
-                        ++ "\n\n========================\n\n"
-                        ++ (show $ getInts $ Map.map (\x -> runExcept (runReaderT (calc x) env)) env)
-      where
-
 ppConses :: [(Idt, Scheme)] -> String
 ppConses [] = ""
 ppConses ((name, scheme) : t) =
@@ -216,9 +174,10 @@ main = do
     case args of
         [fname] -> do
             file <- readFile fname
-            case runExcept $ str_to_calc file of
-                Left err -> hPutStrLn stderr err
-                Right res -> putStrLn res
+            result <- runExceptT $ runProgram emptyEnvs file
+            case result of
+                Left err -> hPutStrLn stderr $ err ++ "\nErrors in file, exiting..."
+                Right _ -> putStrLn "Program finished successfully"
         _ -> do
             putStrLn "Welcome to Paweł!"
             putStrLn "Type :q to quit"
@@ -229,22 +188,21 @@ main = do
                             line <- getLine
                             if line == ":q"
                                 then return Nothing
-                                else
-                                    if doesExprEnd line
-                                        then return $ Just line
-                                        else do
-                                            rest <- inputloop
-                                            case rest of
-                                                Nothing -> return Nothing
-                                                Just rest' -> return $ Just $ line ++ "\n" ++ rest'
+                            else if doesExprEnd line
+                                then return $ Just line
+                            else do
+                                rest <- inputloop
+                                case rest of
+                                    Nothing -> return Nothing
+                                    Just rest' -> return $ Just $ line ++ "\n" ++ rest'
                      in do
-                            unparsed <- inputloop
-                            case unparsed of
-                                Nothing -> putStrLn "Quitting..."
-                                Just unparsed' -> do
-                                    result <- runExceptT $ runProgram envs unparsed'
-                                    case result of
-                                        Left err -> do hPutStrLn stderr err; mainloop envs
-                                        Right res -> mainloop res
+                        unparsed <- inputloop
+                        case unparsed of
+                            Nothing -> putStrLn "Quitting..."
+                            Just unparsed' -> do
+                                result <- runExceptT $ runProgram envs unparsed'
+                                case result of
+                                    Left err -> do hPutStrLn stderr err; mainloop envs
+                                    Right res -> mainloop res
              in mainloop emptyEnvs
 

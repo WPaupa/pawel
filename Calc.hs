@@ -18,8 +18,7 @@ monadicFold f b (h : t) = do
 
 churchify :: Integer -> ExpBound
 churchify n =
-    let
-        church 0 f x = x
+    let church 0 f x = x
         church n f x = f (church (n - 1) f x)
      in
         EBLam empty [Idt "f", Idt "x"] (church n (\q -> EBApp (EBVar $ Idt "f") q) (EBVar $ Idt "x"))
@@ -40,15 +39,14 @@ allPairs :: [a] -> [b] -> [(a, b)]
 allPairs l m = [(x, y) | x <- l, y <- m]
 
 envSubstitute :: BEnv -> BEnv -> BEnv
-envSubstitute lenv nenv =
-    Map.map
-        ( \x -> case x of
-            EBVar y -> case lookup y nenv of
-                Nothing -> x
-                Just z -> z
-            _ -> x
-        )
-        lenv
+envSubstitute lenv nenv = Map.map
+    ( \x -> case x of
+        EBVar y -> case lookup y nenv of
+            Nothing -> x
+            Just z -> z
+        _ -> x
+    )
+    lenv
 
 tryIntify :: ExpBound -> ReaderT BEnv (Except String) (Maybe Integer)
 tryIntify (EBInt x) = return $ Just x
@@ -111,7 +109,6 @@ calc (EBMatch x (CaseBound m e : t)) = do
                 MVar y -> local (insert y x'') (calc e)
                 _ -> return $ EBMatch x (CaseBound m e : t)
 calc (EBArith x y (AriOp f)) = do
-    -- ogarnąć kwestię intów
     x' <- calc x
     y' <- calc y
     x'' <- tryIntify x'

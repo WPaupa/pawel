@@ -103,28 +103,53 @@ prExp (EBVar x) = PP.text (show x)
 prExp (EOVar n x) = PP.text (show x)
 prExp (EBInt x) = PP.text (show x)
 prExp (EBVariant x []) = PP.text (show x)
-prExp (EBVariant x xs) = PP.text (show x) PP.<> PP.parens (PP.hcat (PP.punctuate PP.comma (map prExp xs)))
+prExp (EBVariant x xs) = 
+    PP.text (show x) 
+    PP.<> PP.parens (PP.hcat (PP.punctuate PP.comma (map prExp xs)))
 prExp (EBIf e1 e2 e3) =
     PP.text "if"
-        PP.<+> prExp e1
-        PP.<+> PP.text "then"
-        PP.$$ PP.nest 2 (prExp e2)
-        PP.$$ PP.text "else"
-        PP.$$ PP.nest 2 (prExp e3)
+    PP.<+> prExp e1
+    PP.<+> PP.text "then"
+    PP.$$ PP.nest 2 (prExp e2)
+    PP.$$ PP.text "else"
+    PP.$$ PP.nest 2 (prExp e3)
 prExp (EBLet x tds e1 e2) =
-    PP.text "let" PP.<+> PP.text (show x) PP.<+> PP.text "=" PP.<+> prExp e1 PP.<+> PP.text "in" PP.$$ PP.nest 2 (prExp e2)
+    PP.text "let" 
+    PP.<+> PP.text (show x) 
+    PP.<+> PP.text "=" 
+    PP.<+> prExp e1 
+    PP.<+> PP.text "in" 
+    PP.$$ PP.nest 2 (prExp e2)
 prExp (EBLam env [] e) = PP.text "\\_." PP.<+> prExp e
-prExp (EBLam env xs e) = PP.text "\\" PP.<+> PP.hcat (PP.punctuate PP.comma (map PP.text (map show xs))) PP.<+> PP.text "." PP.<+> prExp e
-prExp (EBMatch x cs) = PP.text ("match " ++ (show x) ++ " with") PP.$$ PP.nest 2 (PP.vcat (map prMatchCase cs))
+prExp (EBLam env xs e) = 
+    PP.text "\\" 
+    PP.<+> PP.hcat (PP.punctuate PP.comma (map PP.text (map show xs))) 
+    PP.<+> PP.text "." 
+    PP.<+> prExp e
+prExp (EBMatch x cs) = 
+    PP.text "match"
+    PP.<+> PP.text (show x)
+    PP.<+> PP.text "with"
+    PP.$$ PP.nest 2 (PP.vcat (map prMatchCase cs))
 prExp (EBApp e1 e2) = prParenExp e1 PP.<+> prParenExp e2
-prExp (EBOverload xs) = PP.text "overload" PP.<+> PP.parens (PP.hcat (PP.punctuate PP.comma (map prExp xs)))
-prExp (EBArith e1 e2 op) = prParenExp e1 PP.<+> PP.text (show op) PP.<+> prParenExp e2
+prExp (EBOverload xs) = 
+    PP.text "overload" 
+    PP.<+> PP.parens (PP.hcat (PP.punctuate PP.comma (map prExp xs)))
+prExp (EBArith e1 e2 op) = 
+    prParenExp e1 
+    PP.<+> PP.text (show op) 
+    PP.<+> prParenExp e2
 
 prMatchCase :: MatchCaseBound -> PP.Doc
-prMatchCase (CaseBound m e) = prMatch m PP.<+> PP.text "->" PP.<+> prExp e
+prMatchCase (CaseBound m e) = 
+    prMatch m 
+    PP.<+> PP.text "->" 
+    PP.<+> prExp e
 
 prMatch :: Match -> PP.Doc
-prMatch (MCons x xs) = PP.text (show x) PP.<+> PP.hcat (PP.punctuate PP.comma (map prParenMatch xs))
+prMatch (MCons x xs) = 
+    PP.text (show x) 
+    PP.<+> PP.hcat (PP.punctuate PP.comma (map prParenMatch xs))
 prMatch (MVar x) = PP.text (show x)
 
 prParenMatch :: Match -> PP.Doc
@@ -150,9 +175,16 @@ instance Show Type where
 prType :: Type -> PP.Doc
 prType (TVar n) = PP.text (show n)
 prType TInt = PP.text "Int"
-prType (TFunc t s) = prParenType t PP.<+> PP.text "->" PP.<+> prType s
-prType (TVariant n ts) = PP.text (show n) PP.<> PP.parens (PP.hcat (PP.punctuate PP.comma (map prType ts)))
-prType (TOverload ts) = PP.text "overload" PP.<> PP.parens (PP.hcat (PP.punctuate PP.comma (map prType ts)))
+prType (TFunc t s) = 
+    prParenType t 
+    PP.<+> PP.text "->" 
+    PP.<+> prType s
+prType (TVariant n ts) = 
+    PP.text (show n) 
+    PP.<> PP.parens (PP.hcat (PP.punctuate PP.comma (map prType ts)))
+prType (TOverload ts) = 
+    PP.text "overload" 
+    PP.<> PP.parens (PP.hcat (PP.punctuate PP.comma (map prType ts)))
 
 prParenType :: Type -> PP.Doc
 prParenType t = case t of
@@ -168,8 +200,7 @@ instance Show Scheme where
 prScheme :: Scheme -> PP.Doc
 prScheme (Scheme vars t) =
     PP.text "All"
-        PP.<+> PP.hcat
-            (PP.punctuate PP.comma (map PP.text $ map show vars))
-            PP.<> PP.text "."
-        PP.<+> prType t
+    PP.<+> PP.hcat (PP.punctuate PP.comma (map PP.text $ map show vars))
+    PP.<> PP.text "."
+    PP.<+> prType t
 

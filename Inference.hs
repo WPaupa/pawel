@@ -19,6 +19,7 @@ instance Types Type where
     ftv (TFunc t1 t2) = ftv t1 `Set.union` ftv t2
     ftv (TVariant name types) = Set.unions $ map ftv types
     ftv (TOverload types) = Set.unions $ map ftv types
+
     apply s (TVar n) = case Map.lookup n s of
         Nothing -> TVar n
         Just t -> t
@@ -48,8 +49,7 @@ instance Types TypeEnv where
     apply s (TypeEnv env) = TypeEnv (Map.map (apply s) env)
 
 generalize :: TypeEnv -> Type -> Scheme
-generalize env t = Scheme vars t
-  where
+generalize env t = Scheme vars t where
     vars = Set.toList ((ftv t) `Set.difference` (ftv env))
 
 unfunify :: Type -> Type
@@ -62,11 +62,10 @@ runTI :: VariantEnv -> TI a -> (Either String a, TIState)
 runTI env t = runState (runReaderT (runExceptT t) env) $ TIState{tiSupply = 0}
 
 newTyVar :: String -> TI Type
-newTyVar prefix =
-    do
-        s <- get
-        put s{tiSupply = tiSupply s + 1}
-        return (TVar $ Idt (prefix ++ show (tiSupply s)))
+newTyVar prefix = do
+    s <- get
+    put s{tiSupply = tiSupply s + 1}
+    return (TVar $ Idt (prefix ++ show (tiSupply s)))
 
 instantiate :: Scheme -> TI Type
 instantiate (Scheme vars t) = do
@@ -101,21 +100,10 @@ mgu (TVariant name types) (TVariant name' types')
     | otherwise =
         throwError $
             "TypeError, variant types "
-                ++ show name
-                ++ "("
-                ++ (show $ length types)
-                ++ ") and "
-                ++ show name'
-                ++ "("
-                ++ (show $ length types')
-                ++ ") do not match"
+                ++ show name ++ "(" ++ (show $ length types) ++ ") and "
+                ++ show name' ++ "(" ++ (show $ length types') ++ ") do not match"
 mgu (TVariant name types) (TFunc t1 t2) = throwError "TypeError: variant application not yet implemented"
-mgu t1 t2 =
-    throwError $
-        "types do not unify: "
-            ++ show t1
-            ++ " vs. "
-            ++ show t2
+mgu t1 t2 = throwError $ "types do not unify: " ++ show t1 ++ " vs. " ++ show t2
 
 haveItBeInt :: Type -> TI Subst
 haveItBeInt (TInt) = return nullSubst
@@ -163,7 +151,7 @@ ti env@(TypeEnv env') (EBVariant name es) =
             Just sigma -> do
                 t <- instantiate sigma
                 case unfunify t of
-                    (TVariant name' ts') -> do
+                    TVariant name' ts' -> do
                         (s, ts) <- foldM f (nullSubst, []) es
                         s' <- mgu (TVariant name ts) (unfunify t)
                         return (s' `composeSubst` s, apply s' (unfunify t))
@@ -173,10 +161,9 @@ ti env (EBIf e1 e2 e3) = do
     s2 <- haveItBeInt (apply s1 t1)
     (s3, t2) <- ti (apply (s2 `composeSubst` s1) env) e2
     (s4, t3) <- ti (apply (s3 `composeSubst` s2 `composeSubst` s1) env) e3
-    s5 <-
-        mgu
-            (apply (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1) t2)
-            (apply (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1) t3)
+    s5 <- mgu
+        (apply (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1) t2)
+        (apply (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1) t3)
     return (s5 `composeSubst` s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1, apply s5 t3)
 ti env (EBLet x tds e1 e2) = do
     (s1, t1) <- ti env (EBLam Map.empty (map untype tds) e1)
@@ -193,17 +180,15 @@ ti env (EBLet x tds e1 e2) = do
     let TypeEnv env' = remove env x
         t' = generalize (apply (s' `composeSubst` s1) env) (apply s' t1)
         env'' = TypeEnv (Map.insert x t' env')
-
     (s2, t2) <- ti (apply (s' `composeSubst` s1) env'') e2
     return (s2 `composeSubst` s' `composeSubst` s1, t2)
 ti env (EBLam lenv [] e) = ti env e
-ti env (EBLam lenv (n : t) e) =
-    do
-        tv <- newTyVar "a"
-        let TypeEnv env' = remove env n
-            env'' = TypeEnv (env' `Map.union` (Map.singleton n (Scheme [] tv)))
-        (s1, t1) <- ti env'' (EBLam lenv t e)
-        return (s1, TFunc (apply s1 tv) t1)
+ti env (EBLam lenv (n : t) e) = do
+    tv <- newTyVar "a"
+    let TypeEnv env' = remove env n
+        env'' = TypeEnv (env' `Map.union` (Map.singleton n (Scheme [] tv)))
+    (s1, t1) <- ti env'' (EBLam lenv t e)
+    return (s1, TFunc (apply s1 tv) t1)
 ti env@(TypeEnv env') (EBMatch x cases) =
     let consargs (TFunc t1 t2) = t1 : (consargs t2)
         consargs _ = []
@@ -238,21 +223,19 @@ ti env@(TypeEnv env') (EBMatch x cases) =
             Just sigma -> do
                 t <- instantiate sigma
                 foldM f (t, nullSubst, Nothing) cases >>= \(xtype, s, Just t) -> return (s, t)
-ti env exp@(EBApp e1 e2) =
-    do
-        tv <- newTyVar "a"
-        (s1, t1) <- ti env e1
-        (s2, t2) <- ti (apply s1 env) e2
-        s3 <- mgu (apply s2 t1) (TFunc t2 tv)
-        return (s3 `composeSubst` s2 `composeSubst` s1, apply s3 tv)
-        `catchError` \e -> throwError $ e ++ "\n in " ++ show exp
-ti env (EBArith e1 e2 op) =
-    do
-        (s1, t1) <- ti env e1
-        (s2, t2) <- ti (apply s1 env) e2
-        s3 <- haveItBeInt (apply (s2 `composeSubst` s1) t1)
-        s4 <- haveItBeInt (apply (s3 `composeSubst` s2 `composeSubst` s1) t2)
-        return (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1, TInt)
+ti env exp@(EBApp e1 e2) = do
+    tv <- newTyVar "a"
+    (s1, t1) <- ti env e1
+    (s2, t2) <- ti (apply s1 env) e2
+    s3 <- mgu (apply s2 t1) (TFunc t2 tv)
+    return (s3 `composeSubst` s2 `composeSubst` s1, apply s3 tv)
+    `catchError` \e -> throwError $ e ++ "\n in " ++ show exp
+ti env (EBArith e1 e2 op) = do
+    (s1, t1) <- ti env e1
+    (s2, t2) <- ti (apply s1 env) e2
+    s3 <- haveItBeInt (apply (s2 `composeSubst` s1) t1)
+    s4 <- haveItBeInt (apply (s3 `composeSubst` s2 `composeSubst` s1) t2)
+    return (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1, TInt)
 
 typeInference :: Map.Map Idt Scheme -> ExpBound -> TI Type
 typeInference env e = do
@@ -270,12 +253,9 @@ overloadInference :: Map.Map Idt Scheme -> VariantEnv -> ExpBound -> Idt -> Exce
 overloadInference env venv (EBOverload xs) name =
     let unpair [] = ([], [])
         unpair ((h1, h2) : t) = let (t1, t2) = unpair t in (h1 : t1, h2 : t2)
-        k =
-            [ (t, x)
-              | (Right t, x) <-
-                    map
-                        (\x -> let (res, _) = runTI venv (recurrentInference env x name) in (res, x))
-                        xs
+        k = [(t, x) | (Right t, x) <- map
+                (\x -> let (res, _) = runTI venv (recurrentInference env x name) in (res, x))
+                xs
             ]
      in case unpair k of
             ([], []) -> throwError "no typeable overload"

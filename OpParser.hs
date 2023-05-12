@@ -47,7 +47,7 @@ infixate (EIf e1 e2 e3) ops = do
 infixate (EMatch x ms) ops =
     fmap
         (EMatch x)
-        ( mapM
+        (mapM
             ( \(Case m e) -> do
                 m' <- infixateMatch m ops
                 e' <- infixate e ops
@@ -107,23 +107,21 @@ infixateOps (e1 : e2 : e3 : e4 : es) ops =
                         e123' <- infixateOps [e1, e2, e3] ops
                         es' <- infixateOps es ops
                         return $ EApp (EApp (EVar op2) e123') es'
-        else
-            if isOp e2 ops
-                then do
-                    e1' <- infixate e1 ops
-                    e2' <- name e2
-                    e34s' <- infixateOps (e3 : e4 : es) ops
-                    return $ EApp (EApp (EVar (first $ ops ! e2')) e1') e34s'
-                else
-                    if isOp e4 ops
-                        then do
-                            e123' <- infixateOps [e1, e2, e3] ops
-                            e4' <- name e4
-                            es' <- infixateOps es ops
-                            return $ EApp (EApp (EVar (first $ ops ! e4')) e123') es'
-                        else do
-                            e12' <- infixateOps [e1, e2] ops
-                            infixateOps (e12' : e3 : e4 : es) ops
+    else if isOp e2 ops
+        then do
+            e1' <- infixate e1 ops
+            e2' <- name e2
+            e34s' <- infixateOps (e3 : e4 : es) ops
+            return $ EApp (EApp (EVar (first $ ops ! e2')) e1') e34s'
+    else if isOp e4 ops
+        then do
+            e123' <- infixateOps [e1, e2, e3] ops
+            e4' <- name e4
+            es' <- infixateOps es ops
+            return $ EApp (EApp (EVar (first $ ops ! e4')) e123') es'
+        else do
+            e12' <- infixateOps [e1, e2] ops
+            infixateOps (e12' : e3 : e4 : es) ops
 
 infixateMatchOps :: [Match] -> OpEnv -> Except String Match
 infixateMatchOps [] ops = throwError "infixateMatchOps: empty list"

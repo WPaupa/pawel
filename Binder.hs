@@ -46,8 +46,7 @@ bind (ELet x tds e1 e2) =
                 EBOverload es -> bubble $ map (\e -> bind2 e) es
                 _ -> bind2 e1'
 bind (EIf e1 e2 e3) =
-    let
-        bind3 e1' e2' = do
+    let bind3 e1' e2' = do
             e3' <- bind e3
             case e3' of
                 EBOverload es -> return $ EBOverload $ map (\e -> EBIf e1' e2' e) es
@@ -57,25 +56,22 @@ bind (EIf e1 e2 e3) =
             case e2' of
                 EBOverload es -> bubble $ map (\e -> bind3 e1' e) es
                 _ -> bind3 e1' e2'
-     in
-        do
-            e1' <- bind e1
-            case e1' of
-                EBOverload es -> bubble $ map (\e -> bind2 e) es
-                _ -> bind2 e1'
+     in do
+        e1' <- bind e1
+        case e1' of
+            EBOverload es -> bubble $ map (\e -> bind2 e) es
+            _ -> bind2 e1'
 bind (EApp e1 e2) =
-    let
-        bind2 e1' = do
+    let bind2 e1' = do
             e2' <- bind e2
             case e2' of
                 EBOverload es -> return $ EBOverload $ map (\e -> EBApp e1' e) es
                 _ -> return $ EBApp e1' e2'
-     in
-        do
-            e1' <- bind e1
-            case e1' of
-                EBOverload es -> bubble $ map (\e -> bind2 e) es
-                _ -> bind2 e1'
+     in do
+        e1' <- bind e1
+        case e1' of
+            EBOverload es -> bubble $ map (\e -> bind2 e) es
+            _ -> bind2 e1'
 bind (ELam xs e) = do
     env <- ask
     e' <- local (inserts $ map (\x -> (x, EBVar x)) xs) $ bind e
@@ -83,8 +79,7 @@ bind (ELam xs e) = do
         EBOverload es -> return $ EBOverload $ map (\e -> EBLam env xs e) es
         _ -> return $ EBLam env xs e'
 bind (EMatch x mcs) =
-    let
-        bindMatch (MVar x) = insert x (EBVar x)
+    let bindMatch (MVar x) = insert x (EBVar x)
         bindMatch (MCons x []) = id
         bindMatch (MCons x (h : t)) = bindMatch h . bindMatch (MCons x t)
         bindMC (Case p e) = do
@@ -101,8 +96,7 @@ bind (EMatch x mcs) =
                 (CaseBoundOverload hs, EBMatch x' ts) -> bubble $ map (\c -> return $ EBMatch x' $ c : ts) hs
                 (CaseBound m e, EBOverload ts) -> bubble $ map (\(EBMatch x' ms) -> return $ EBMatch x' $ (CaseBound m e) : ms) ts
                 (CaseBoundOverload hs, EBOverload ts) -> bubble $ map (\(EBMatch x' ms) -> bubble $ map (\c -> return $ EBMatch x' $ c : ms) hs) ts
-     in
-        bindMCs mcs
+     in bindMCs mcs
 
 addOverloadNumber :: Idt -> Int -> ExpBound -> ExpBound
 addOverloadNumber name n (EBVar name') = if name == name' then EOVar n name else EBVar name'
