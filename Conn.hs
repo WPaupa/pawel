@@ -1,5 +1,3 @@
-module Conn where
-
 import AbsPawel
 import Binder
 import Calc
