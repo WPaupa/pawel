@@ -24,7 +24,7 @@ churchify n =
         EBLam empty [Idt "f", Idt "x"] (church n (\q -> EBApp (EBVar $ Idt "f") q) (EBVar $ Idt "x"))
 
 flattenExp :: [ExpBound] -> ExpBound
-flattenExp [x] = x
+flattenExp [] = EBOverload []
 flattenExp ((EBOverload xs) : t) = case flattenExp t of
     EBOverload ys -> EBOverload $ xs ++ ys
     y -> EBOverload $ xs ++ [y]
@@ -81,16 +81,15 @@ calc (EBApp e1 e2) = do
     e1' <- calc e1
     e2' <- calc e2
     case e1' of
-        EBInt x -> calc $ EBApp (churchify x) e2'
+        EBInt x -> if x < 0 then throwError "Applying negative integer" else calc $ EBApp (churchify x) e2'
         EBOverload xs -> bubbleOverload $ map (\x -> EBApp x e2') xs
         EBLam env [] e -> local (envSubstitute env) $ calc (EBApp e e2')
         EBLam env (h : t) e -> local (\env' -> insert h e2' $ envSubstitute env env') $ calc (EBLam (insert h e2' env) t e)
         EBVariant name vs -> calc $ EBVariant name $ map (\v -> EBApp v e2') vs
         _ -> return $ EBApp e1' e2'
-calc (EBOverload [x]) = calc x
 calc (EBOverload xs) = mapM calc xs >>= return . flattenExp
 calc (EBVariant x xs) = mapM calc xs >>= return . EBVariant x
-calc (EBMatch x []) = error "Match error"
+calc (EBMatch x []) = throwError "Match error"
 calc (EBMatch x (CaseBound m e : t)) = do
     env <- ask
     case lookup x env of

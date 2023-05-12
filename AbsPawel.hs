@@ -189,8 +189,6 @@ prType (TOverload ts) =
 prParenType :: Type -> PP.Doc
 prParenType t = case t of
     TFunc _ _ -> PP.parens (prType t)
-    TVariant _ _ -> PP.parens (prType t)
-    TOverload _ -> PP.parens (prType t)
     _ -> prType t
 
 instance Show Scheme where

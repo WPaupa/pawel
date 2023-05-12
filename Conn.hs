@@ -111,8 +111,8 @@ processDecl (env, tenv, venv, ops) (DType name tvs ((VarType vname ts) : t)) =
                 )
                 (DType name tvs t)
         else throwError "Unbound type variable in type definition"
-processDecl (env, tenv, venv, ops) (DLOp prec op sem) = return (env, tenv, venv, Map.insert op (sem, prec, -1) ops)
-processDecl (env, tenv, venv, ops) (DROp prec op sem) = return (env, tenv, venv, Map.insert op (sem, prec, 1) ops)
+processDecl (env, tenv, venv, ops) (DLOp prec op sem) = return (env, tenv, venv, Map.insert op (sem, prec, 1) ops)
+processDecl (env, tenv, venv, ops) (DROp prec op sem) = return (env, tenv, venv, Map.insert op (sem, prec, -1) ops)
 
 ppConses :: [(Idt, Scheme)] -> String
 ppConses [] = ""

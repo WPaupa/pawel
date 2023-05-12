@@ -77,7 +77,7 @@ mgu :: Type -> Type -> TI Subst
 mgu (TFunc l r) (TFunc l' r') = do
     s1 <- mgu l l'
     s2 <- mgu (apply s1 r) (apply s1 r')
-    return (s1 `composeSubst` s2)
+    return (s2 `composeSubst` s1)
 mgu (TVar u) t = varBind u t
 mgu t (TVar u) = varBind u t
 mgu TInt TInt = return nullSubst
@@ -85,7 +85,7 @@ mgu TInt (TFunc (TInt) b) = throwError $ "TypeError, expected Int, got Int -> " 
 mgu TInt (TFunc (TFunc t1 t2) b) = do
     s1 <- mgu (TFunc t1 t2) b
     s2 <- mgu (apply s1 t1) (apply s1 t2)
-    return (s1 `composeSubst` s2)
+    return (s2 `composeSubst` s1)
 mgu TInt (TFunc (TVar a) b) = mgu (TVar a) b
 mgu t1 TInt = mgu TInt t1
 mgu (TVariant name types) (TVariant name' types')
@@ -93,7 +93,7 @@ mgu (TVariant name types) (TVariant name' types')
         foldM
             ( \s (t1, t2) -> do
                 s1 <- mgu t1 t2
-                return (s `composeSubst` s1)
+                return (s1 `composeSubst` s)
             )
             nullSubst
             (zip types types')
