@@ -9,6 +9,11 @@ type VariantEnv = (Map Idt Scheme, Map Idt [Idt])
 insertCons :: Idt -> Scheme -> VariantEnv -> VariantEnv
 insertCons name t@(Scheme _ (TVariant tname _)) (a, b) = (insert name t a, insertWith (++) tname [name] b)
 
+getConses :: Idt -> VariantEnv -> [Idt]
+getConses name (_, b) = case lookup name b of
+    Just x -> x
+    Nothing -> []
+
 emptyEnv :: VariantEnv
 emptyEnv = (empty, empty)
 

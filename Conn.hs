@@ -14,6 +14,7 @@ import System.IO
 import System.Environment
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.Maybe
 
 is_typed :: [TypeDecl] -> Bool
 is_typed [] = False
@@ -69,6 +70,8 @@ getInts m = [(k, h:t) | (k, Just (h:t)) <- Map.toList $ Map.map f m] where
     f _ = Nothing
 
 type FullEnv = (BEnv, Map.Map Idt Scheme, VariantEnv, Map.Map Idt (Idt, Integer, Integer))
+emptyEnvs :: FullEnv
+emptyEnvs = (aenv, atenv, emptyEnv, Map.fromList bop)
 
 processDecl :: FullEnv -> Decl -> Except String FullEnv
 processDecl (env, tenv, venv, ops) (DExp name tds exp) = let unbound = (ELet name tds (infixate exp ops) (EVar name)) in
@@ -79,20 +82,19 @@ processDecl (env, tenv, venv, ops) (DExp name tds exp) = let unbound = (ELet nam
                 Nothing -> TOverload [] in do
                     (boundType, exps) <- overloadInference tenv venv bound name 
                     calcedExp <- runReaderT (calc exps) env
-                    let fullScheme = generalize (TypeEnv tenv) (sumTypes current boundType)
-                        bounds = expToList calcedExp in
+                    let bounds = expToList calcedExp in
                         case Map.lookup name env of
                             Just (EBOverload xs) -> 
                                 return (
                                     Map.insert name (EBOverload $ xs ++ bounds) env, 
-                                    Map.insert name fullScheme tenv,
+                                    Map.insert name (generalize (TypeEnv tenv) (sumTypes current boundType)) tenv,
                                     venv,
                                     ops
                                 )
                             _ -> 
                                 return (
                                     Map.insert name (EBOverload bounds) env, 
-                                    Map.insert name fullScheme tenv,
+                                    Map.insert name (generalize (TypeEnv tenv) boundType) tenv,
                                     venv,
                                     ops
                                 )
@@ -122,26 +124,54 @@ processDecl (env, tenv, venv, ops) (DType name tvs ((VarType vname ts):t)) =
                     ops
                 )
         ) (DType name tvs t)
-    else error "Unbound type variable in type definition"
+    else throwError "Unbound type variable in type definition"
 processDecl (env, tenv, venv, ops) (DLOp prec op sem) = return (env, tenv, venv, Map.insert op (sem, prec, -1) ops)
 processDecl (env, tenv, venv, ops) (DROp prec op sem) = return (env, tenv, venv, Map.insert op (sem, prec,  1) ops)
 
 str_to_calc :: String -> Except String String
 str_to_calc x = case pProgram (myLexer x) of
     Left err -> throwError err
-    Right (Prog es) -> let envs = foldM processDecl (aenv, atenv, emptyEnv, Map.fromList bop) es in do
+    Right (Prog es) -> let envs = foldM processDecl emptyEnvs es in do
         (env, tenv, venv, ops) <- envs       
         return $ (show tenv) ++ "\n\n===============\n\n" ++ 
             (show env) ++ "\n\n========================\n\n" ++ 
             (show venv) ++ "\n\n========================\n\n" ++
             (show $ Map.map (\x -> runExcept (runReaderT (calc x) env)) env) ++ "\n\n========================\n\n" ++
             (show $ getInts $ Map.map (\x -> runExcept (runReaderT (calc x) env)) env) where
-        
 
-runProgram :: FullEnv -> String -> Except String FullEnv
+ppConses :: [(Idt, Scheme)] -> String
+ppConses [] = ""
+ppConses ((name, scheme):t) = 
+    show name ++ " of " ++ show scheme ++ "\n" ++ ppConses t
+
+processDeclIO :: FullEnv -> Decl -> ExceptT String IO FullEnv
+processDeclIO envs x = let declEnvs = processDecl envs x in    
+    case runExcept declEnvs of 
+        Left err -> throwError err
+        Right res@(env, tenv, venv, ops) -> case x of
+            DExp name _ _ -> do
+                lift $ putStrLn $ show name ++ " of " ++ (show $ fromJust $ Map.lookup name tenv) ++ " is "
+                lift $ putStrLn $ show $ fromJust $ Map.lookup name env
+                return res
+            DType name _ _ -> do
+                lift $ putStrLn $ ppConses $ map (\x -> (x, fromJust $ Map.lookup x tenv)) $ getConses name venv
+                return res
+            DLOp prec op sem -> do
+                lift $ putStrLn $ "Left-binding operator " ++ show op ++ " with precedence " ++ show prec ++ " is " ++ show sem
+                return res
+            DROp prec op sem -> do
+                lift $ putStrLn $ "Right-binding operator " ++ show op ++ " with precedence " ++ show prec ++ " is " ++ show sem
+                return res
+
+runProgram :: FullEnv -> String -> ExceptT String IO FullEnv
 runProgram envs x = case pProgram (myLexer x) of
     Left err -> throwError err
-    Right (Prog es) -> foldM (\x -> processDecl x) envs es    
+    Right (Prog es) -> foldM processDeclIO envs es    
+
+doesExprEnd :: String -> Bool
+doesExprEnd ";;" = True
+doesExprEnd (x:y:xs) = doesExprEnd (y:xs)
+doesExprEnd _ = False
 
 main :: IO ()
 main = do
@@ -152,21 +182,31 @@ main = do
             case runExcept $ str_to_calc file of
                 Left err -> hPutStrLn stderr err
                 Right res -> putStrLn res
-        _ ->
-            let inputloop = do {
+        _ -> do
+            putStrLn "Welcome to Paweł!"
+            putStrLn "Type :q to quit"
+            let mainloop envs = do {
                 putStr "Paweł> ";
-                hFlush stdout;
-                line <- getLine;
-                case line of
-                    ":q" -> return ""
-                    _ -> do
+                let inputloop = do {
+                    hFlush stdout;
+                    line <- getLine;
+                    if line == ":q" then
+                        return Nothing
+                    else if doesExprEnd line then
+                        return $ Just line
+                    else do
                         rest <- inputloop
-                        return $ line ++ "\n" ++ rest
-            } in do
-                putStrLn "Welcome to Paweł!"
-                putStrLn "Type :q to quit"
-                unparsed <- inputloop
-                case runExcept $ str_to_calc unparsed of
-                    Left err -> putStrLn err
-                    Right res -> putStrLn res
+                        case rest of
+                            Nothing -> return Nothing
+                            Just rest' -> return $ Just $ line ++ "\n" ++ rest'
+                } in do
+                    unparsed <- inputloop
+                    case unparsed of
+                        Nothing -> putStrLn "Quitting..."
+                        Just unparsed' -> do
+                            result <- runExceptT $ runProgram envs unparsed'
+                            case result of
+                                Left err -> do {hPutStrLn stderr err; mainloop envs}
+                                Right res -> mainloop res
+            } in mainloop emptyEnvs
                 
