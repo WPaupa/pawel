@@ -12,6 +12,7 @@ import OpParser
 import ParPawel (myLexer, pProgram)
 import System.Environment
 import System.IO
+import System.Exit
 
 is_typed :: [TypeDecl] -> Bool
 is_typed [] = False
@@ -22,25 +23,7 @@ expToList :: ExpBound -> [ExpBound]
 expToList (EBOverload xs) = xs
 expToList x = [x]
 
-bop =
-    [ (Idt "$", (Idt "{$}", 0, -1)),
-      (Idt "||", (Idt "{||}", 2, -1)),
-      (Idt "&&", (Idt "{&&}", 3, -1)),
-      (Idt "==", (Idt "{==}", 4, -1)),
-      (Idt "/=", (Idt "{/=}", 4, -1)),
-      (Idt "<", (Idt "{<}", 4, -1)),
-      (Idt ">", (Idt "{>}", 4, -1)),
-      (Idt "<=", (Idt "{<=}", 4, -1)),
-      (Idt ">=", (Idt "{>=}", 4, -1)),
-      (Idt ",", (Idt "Cons", 0, -1)),
-      (Idt ":", (Idt "Cons", 5, -1)),
-      (Idt "++", (Idt "{++}", 5, -1)),
-      (Idt "+", (Idt "{+}", 6, 1)),
-      (Idt "-", (Idt "{-}", 6, 1)),
-      (Idt "/", (Idt "{/}", 7, 1)),
-      (Idt "*", (Idt "{*}", 7, 1)),
-      (Idt "^", (Idt "{^}", 8, -1))
-    ]
+bop = []
 
 aenv = Map.fromList
     [   (Idt "{-}", ari $ ariOp (-)),
@@ -167,40 +150,44 @@ doesExprEnd (x : y : xs) = doesExprEnd (y : xs)
 doesExprEnd _ = False
 
 main :: IO ()
-main = do
-    args <- getArgs
-    case args of
-        [fname] -> do
-            file <- readFile fname
-            result <- runExceptT $ runProgram emptyEnvs file
-            case result of
-                Left err -> hPutStrLn stderr $ err ++ "\nErrors in file, exiting..."
-                Right _ -> putStrLn "Program finished successfully"
-        _ -> do
-            putStrLn "Welcome to Paweł!"
-            putStrLn "Type :q to quit"
-            let mainloop envs = do
-                    putStr "Paweł> "
-                    let inputloop = do
-                            hFlush stdout
-                            line <- getLine
-                            if line == ":q"
-                                then return Nothing
-                            else if doesExprEnd line
-                                then return $ Just line
-                            else do
-                                rest <- inputloop
-                                case rest of
-                                    Nothing -> return Nothing
-                                    Just rest' -> return $ Just $ line ++ "\n" ++ rest'
-                     in do
-                        unparsed <- inputloop
-                        case unparsed of
-                            Nothing -> putStrLn "Quitting..."
-                            Just unparsed' -> do
-                                result <- runExceptT $ runProgram envs unparsed'
-                                case result of
-                                    Left err -> do hPutStrLn stderr err; mainloop envs
-                                    Right res -> mainloop res
-             in mainloop emptyEnvs
+main = 
+    let mainloop envs = do
+            putStr "Paweł> "
+            let inputloop = do
+                    hFlush stdout
+                    line <- getLine
+                    if line == ":q"
+                        then return Nothing
+                    else if doesExprEnd line
+                        then return $ Just line
+                    else do
+                        rest <- inputloop
+                        case rest of
+                            Nothing -> return Nothing
+                            Just rest' -> return $ Just $ line ++ "\n" ++ rest'
+                in do
+                unparsed <- inputloop
+                case unparsed of
+                    Nothing -> return envs
+                    Just unparsed' -> do
+                        result <- runExceptT $ runProgram envs unparsed'
+                        case result of
+                            Left err -> do hPutStrLn stderr err; mainloop envs
+                            Right res -> mainloop res
+     in do
+        args <- getArgs
+        case args of
+            [] -> do
+                putStrLn "Welcome to Paweł!"
+                putStrLn "Type :q to quit"
+                _ <- mainloop emptyEnvs
+                putStrLn "Quitting...";
+            _ ->
+                let process envs fname = do
+                        file <- readFile fname
+                        result <- runExceptT $ runProgram envs file
+                        case result of
+                            Left err -> do hPutStrLn stderr $ err ++ "\nErrors in file, exiting..."; exitWith $ ExitFailure 1
+                            Right envs' -> return envs' 
+                in foldM_ (\envs fname -> if fname == "stdin" then mainloop envs else process envs fname) emptyEnvs args
 
