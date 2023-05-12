@@ -87,9 +87,10 @@ emptyEnvs = (aenv, atenv, emptyEnv, Map.fromList bop)
 
 processDecl :: FullEnv -> Decl -> Except String FullEnv
 processDecl (env, tenv, venv, ops) (DExp name tds exp) = do
-    unbound <- fmap (\infd -> ELet name tds infd (EVar name)) $ infixate exp ops
+    unboundUnchecked <- fmap (\infd -> ELet name tds infd (EVar name)) $ infixate exp ops
+    unbound <- bindZeroargMatches unboundUnchecked (venv, tenv)
     if is_typed tds then
-        let bound = bindRecurrent (bindZeroargMatches unbound (venv, tenv)) name env 
+        let bound = bindRecurrent unbound name env 
             current = case Map.lookup name tenv of
                 Just (Scheme vars t) -> t
                 Nothing -> TOverload [] in do
@@ -112,7 +113,7 @@ processDecl (env, tenv, venv, ops) (DExp name tds exp) = do
                                     ops
                                 )
     else
-        let bound = bindRecurrent (bindZeroargMatches unbound (venv, tenv)) name env in do {
+        let bound = bindRecurrent unbound name env in do {
             (typeAssignment, exps) <- overloadInference tenv venv bound name;
             calcedExp <- runReaderT (calc exps) env;
             return (

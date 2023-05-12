@@ -129,7 +129,7 @@ prMatch (MVar x) = PP.text (show x)
 
 prParenMatch :: Match -> PP.Doc
 prParenMatch t = case t of
-                  MCons _ _ -> PP.parens (prMatch t)
+                  MCons _ (_:_) -> PP.parens (prMatch t)
                   _ -> prMatch t
 
 prParenExp :: ExpBound -> PP.Doc

@@ -17,19 +17,34 @@ getConses name (_, b) = case lookup name b of
 emptyEnv :: VariantEnv
 emptyEnv = (empty, empty)
 
-bindZeroargMatches :: Exp -> (VariantEnv, Map Idt Scheme) -> Exp
-bindZeroargMatches (EVar x) e = EVar x
-bindZeroargMatches (EInt x) e = EInt x
-bindZeroargMatches (ELet x tds e1 e2) e = ELet x tds (bindZeroargMatches e1 e) (bindZeroargMatches e2 e)
-bindZeroargMatches (EIf e1 e2 e3) e = EIf (bindZeroargMatches e1 e) (bindZeroargMatches e2 e) (bindZeroargMatches e3 e)
-bindZeroargMatches (ELam xs ex) e = ELam xs (bindZeroargMatches ex e)
+bindZeroargMatches :: Exp -> (VariantEnv, Map Idt Scheme) -> Except String Exp
+bindZeroargMatches (EVar x) e = return $ EVar x
+bindZeroargMatches (EInt x) e = return $ EInt x
+bindZeroargMatches (ELet x tds e1 e2) e = do
+    e1' <- bindZeroargMatches e1 e
+    e2' <- bindZeroargMatches e2 e
+    return $ ELet x tds e1' e2'
+bindZeroargMatches (EIf e1 e2 e3) e = do
+    e1' <- bindZeroargMatches e1 e
+    e2' <- bindZeroargMatches e2 e
+    e3' <- bindZeroargMatches e3 e
+    return $ EIf e1' e2' e3'
+bindZeroargMatches (ELam xs ex) e = fmap (ELam xs) (bindZeroargMatches ex e)
 bindZeroargMatches (EMatch x cases) e@((ve, _), te) = 
     let bindMatch (MVar x) = if member x ve then case lookup x te of
-                Just (Scheme _ (TVariant _ _)) -> MCons x []
-                _ -> MVar x
-            else MVar x
-        bindMatch (MCons name xs) = MCons name (map bindMatch xs) in
-        EMatch x (map (\(Case c ex) -> Case (bindMatch c) (bindZeroargMatches ex e)) cases)
-bindZeroargMatches (EApp e1 e2) e = EApp (bindZeroargMatches e1 e) (bindZeroargMatches e2 e)
+                Just (Scheme _ (TVariant _ _)) -> return $ MCons x []
+                _ -> return $ MVar x
+            else return $ MVar x
+        bindMatch (MCons name xs) = if member name ve 
+            then fmap (MCons name) (mapM bindMatch xs) 
+            else throwError $ "Unbound variant constructor: " ++ show name in
+        fmap (EMatch x) (mapM (\(Case c ex) -> do
+            c' <- bindMatch c
+            ex' <- bindZeroargMatches ex e
+            return $ Case c' ex') cases)
+bindZeroargMatches (EApp e1 e2) e = do
+    e1' <- bindZeroargMatches e1 e
+    e2' <- bindZeroargMatches e2 e
+    return $ EApp e1' e2'
 
 data MatchState = Complete | Incomplete | Cons [(Idt, MatchState)] deriving (Eq, Ord, Show, Read)
