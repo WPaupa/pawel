@@ -20,7 +20,7 @@ name _ = throwError "name: not a name"
 
 nameM :: Match -> Except String Idt
 nameM (MVar x) = return x
-nameM _ = throwError "nameM: not a name"
+nameM _ = throwError "Match without a constructor or unbound infix operator"
 
 first (x, _, _) = x
 

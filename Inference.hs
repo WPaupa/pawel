@@ -165,9 +165,13 @@ ti env (EBIf e1 e2 e3) = do
         (apply (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1) t2)
         (apply (s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1) t3)
     return (s5 `composeSubst` s4 `composeSubst` s3 `composeSubst` s2 `composeSubst` s1, apply s5 t3)
-ti env (EBLet x tds e1 e2) = do
-    (s1, t1) <- ti env (EBLam Map.empty (map untype tds) e1)
-    let typeof [] = newTyVar "a"
+ti env@(TypeEnv env') (EBLet x tds e1 e2) = do
+    tv <- newTyVar "a"
+    (s0, t0) <- ti (TypeEnv (Map.insert x (Scheme [] tv) env')) (EBLam Map.empty (map untype tds) e1)
+    s0' <- mgu (apply s0 t0) (apply s0 tv)
+    let t1 = apply s1 t0 
+        s1 = s0' `composeSubst` s0
+        typeof [] = newTyVar "a"
         typeof ((TDVar x) : t) = do
             tv <- newTyVar "a"
             t' <- typeof t

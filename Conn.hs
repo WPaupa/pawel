@@ -58,7 +58,7 @@ processDecl (env, tenv, venv, ops) (DExp name tds exp) = do
     unboundUnchecked <- fmap (\infd -> ELet name tds infd (EVar name)) $ infixate exp ops
     unbound <- bindZeroargMatches unboundUnchecked (venv, tenv)
     if is_typed tds
-        then
+        then 
             let bound = bindRecurrent unbound name env
                 current = case Map.lookup name tenv of
                     Just (Scheme vars t) -> t

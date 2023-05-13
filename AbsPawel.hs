@@ -1,7 +1,6 @@
 module AbsPawel where
 
 import Data.Map (Map, empty)
-import qualified Data.String
 import qualified Text.PrettyPrint as PP
 
 data Program = Prog [Decl]
@@ -143,14 +142,14 @@ prExp (EBMatch x cs) =
     PP.<+> PP.text (show x)
     PP.<+> PP.text "with"
     PP.$$ PP.nest 2 (PP.vcat (map prMatchCase cs))
-prExp (EBApp e1 e2) = prParenExp e1 PP.<+> prParenExp e2
+prExp (EBApp e1 e2) = prParenExpL e1 PP.<+> prParenExpR e2
 prExp (EBOverload xs) = 
     PP.text "overload" 
     PP.<+> PP.parens (PP.cat (PP.punctuate PP.comma (map prExp xs)))
 prExp (EBArith e1 e2 op) = 
-    prParenExp e1 
+    prParenExpL e1 
     PP.<+> PP.text (show op) 
-    PP.<+> prParenExp e2
+    PP.<+> prParenExpL e2
 
 prMatchCase :: MatchCaseBound -> PP.Doc
 prMatchCase (CaseBound m e) = 
@@ -169,17 +168,21 @@ prParenMatch t = case t of
     MCons _ (_ : _) -> PP.parens (prMatch t)
     _ -> prMatch t
 
-prParenExp :: ExpBound -> PP.Doc
-prParenExp t = case t of
+prParenExpL :: ExpBound -> PP.Doc
+prParenExpL t = case t of
     EBVariant _ _ -> PP.parens (prExp t)
     EBIf _ _ _ -> PP.parens (prExp t)
     EBLet _ _ _ _ -> PP.parens (prExp t)
     EBLam _ _ _ -> PP.parens (prExp t)
     EBMatch _ _ -> PP.parens (prExp t)
-    EBApp _ _ -> PP.parens (prExp t)
     EBOverload _ -> PP.parens (prExp t)
     EBArith _ _ _ -> PP.parens (prExp t)
     _ -> prExp t
+
+prParenExpR :: ExpBound -> PP.Doc
+prParenExpR t = case t of
+    EBApp _ _ -> PP.parens (prExp t)
+    _ -> prParenExpL t
 
 instance Show Type where
     showsPrec _ x = shows (prType x)
