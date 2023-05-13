@@ -1,3 +1,5 @@
+-- użycie: ./Conn good/overloadAri.ml good/Prelude.ml good/Data.ml
+
 -- Aplikacja intów w Pawle bardzo naturalnie wynika
 -- z rekurencji pierwotnej.
 

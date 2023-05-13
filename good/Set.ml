@@ -1,3 +1,6 @@
+-- użycie: ./Conn good/regularAri.ml good/Prelude.ml good/String.ml good/Set.ml
+-- (można także bez String.ml, ale wtedy nie można tworzyć map o kluczu łańcuchowym)
+
 -- Implementacja zbiorów (drzewo AVL) z zadania iSet z WPF.
 -- Dla szybkości parsowania tutaj należy korzystać z regularAri
 

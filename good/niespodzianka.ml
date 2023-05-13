@@ -1,5 +1,6 @@
 -- Ten plik zawiera odwołania do większości pozostałych,
 -- więc proszę o przeczytanie go na samym końcu.
+-- użycie: ./Conn good/regularAri.ml good/Prelude.ml good/monads.ml good/String.ml good/Set.ml good/Data.ml
 
 -- *******************
 -- *******************

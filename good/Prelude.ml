@@ -1,3 +1,6 @@
+-- użycie: ./Conn good/regularAri.ml good/Prelude.ml
+-- lub ./Conn good/overloadAri.ml good/Prelude.ml
+
 op right 0 $  = {$};;
 op right 2 || = {||};;
 op right 3 && = {&&};;
@@ -58,9 +61,8 @@ let int (a:Bool of) = match a with
 -- Operacje na listach
 type List of a = Empty | Cons a (List of a);;
 
-let head default list = match list with 
-    Empty => default 
-    | Cons a b => a;;
+let head list = match list with 
+    Cons a b => a;;
 let tail list = match list with 
     Empty => Empty 
     | Cons a b => b;;

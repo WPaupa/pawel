@@ -1,3 +1,6 @@
+-- użycie: ./Conn good/regularAri.ml good/Prelude.ml good/String.ml
+-- lub ./Conn good/overloadAri.ml good/Prelude.ml good/String.ml
+
 -- Ten sposób implementowania łańcuchów znaków
 -- jest bardzo daleki perfekcji,
 -- ale w języku bez wejścia i wyjścia
