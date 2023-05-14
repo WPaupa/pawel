@@ -19,3 +19,9 @@ let k = if True then 1 else 0;;
 -- to jednak typ return jest a -> monada a, i nie unifikuje się z a->a.
 -- Niepoprawny jest więc napis:
 let k = 5 return 3;;
+
+-- Przeładowana funkcja może się rekurencyjnie odwoływać tylko do swojego wariantu.
+-- Dlatego to wyrażenie się nie otypuje:
+
+let h (x:Int) = x;;
+let h (x:Int->Int) = h (x 0);;

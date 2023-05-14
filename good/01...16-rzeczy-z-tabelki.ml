@@ -11,7 +11,7 @@
 let k = if 1 then 1 else 0;;
 -- let k = if True then 1 else 0;;
 
--- 2. Arytmetyka, porównania
+-- 2. Arytmetyka, porównania (uwaga, używane z overloadAri to się trochę mieli)
 let k = if 1 + 2 * 3 < (1 + 2) * 3 then 2 ** 1 ** 3 else (2 ** 1) ** 3;;
 let k = if 1 == 2 then False else True;;
 

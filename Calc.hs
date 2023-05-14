@@ -11,11 +11,10 @@ import OpParser
 import Prelude hiding (lookup)
 
 monadicFold :: (Monad m) => (b -> a -> b) -> b -> [m a] -> m b
-monadicFold f b [] = return b
-monadicFold f b (h : t) = do
-    h' <- h
-    monadicFold f (f b h') t
+monadicFold f b l = fmap (foldl f b) $ sequence l
 
+-- Funkcja churchify ze z liczby robi wyrażenie,
+-- które w języku Paweł odpowiada przy aplikacji tej liczbie
 churchify :: Integer -> ExpBound
 churchify n =
     let church 0 f x = x
@@ -23,6 +22,8 @@ churchify n =
      in
         EBLam empty [Idt "f", Idt "x"] (church n (\q -> EBApp (EBVar $ Idt "f") q) (EBVar $ Idt "x"))
 
+-- Funkcja flattenExp z listy może przeciążonych wyrażeń
+-- robi przeciążone wyrażenie, które jest ich sumą.
 flattenExp :: [ExpBound] -> ExpBound
 flattenExp [] = EBOverload []
 flattenExp ((EBOverload xs) : t) = case flattenExp t of
@@ -32,12 +33,20 @@ flattenExp (x : t) = case flattenExp t of
     EBOverload ys -> EBOverload $ x : ys
     y -> EBOverload $ [x, y]
 
+-- Funkcja bubbleOverload bierze listę może przeciążonych wyrażeń,
+-- wykonuje każde z nich, a następnie sumuje wyniki.
 bubbleOverload :: [ExpBound] -> ReaderT BEnv (Except String) ExpBound
 bubbleOverload xs = fmap flattenExp $ mapM calc xs
 
 allPairs :: [a] -> [b] -> [(a, b)]
 allPairs l m = [(x, y) | x <- l, y <- m]
 
+-- Funkcja envSubstitute służy do sumowania środowisk przy
+-- aplikacji lambdy. Gdy lambda zostaje zadeklarowana, niektóre
+-- stałe są związane statycznie, a inne zostają jako argumenty.
+-- Te, które zostają jako argumenty, są postaci EVar nazwa.
+-- Przy aplikacji te argumenty są zastępowane przez ich
+-- wartości ze środowiska wykonującego.
 envSubstitute :: BEnv -> BEnv -> BEnv
 envSubstitute lenv nenv = Map.map
     ( \x -> case x of
@@ -48,6 +57,10 @@ envSubstitute lenv nenv = Map.map
     )
     lenv
 
+-- Procedura używana, gdy jakieś wyrażenie pojawia się
+-- w operacji arytmetycznej. Jeśli jest po prostu intem,
+-- to możemy ją normalnie zastosować, a jeśli nie, to
+-- kręcimy nim funkcją x -> x + 1 na zerze, żeby dostać liczbę.
 tryIntify :: ExpBound -> ReaderT BEnv (Except String) (Maybe Integer)
 tryIntify (EBInt x) = return $ Just x
 tryIntify x = do
@@ -56,6 +69,8 @@ tryIntify x = do
         EBInt x'' -> return $ Just x''
         _ -> return Nothing
 
+-- Główna funkcja do obliczania wyrażeń. Przeładowania
+-- bąbelkują do góry. 
 calc :: ExpBound -> ReaderT BEnv (Except String) ExpBound
 calc (EBVar x) = do
     env <- ask
@@ -72,11 +87,18 @@ calc (EBIf e1 e2 e3) = do
         _ -> return $ EBIf e1' e2 e3
 calc (EBLet x t e1 e2) = do
     env <- ask
-    local (insert x $ EBLam (insert x (EBVar x) env) (map untype t) e1) (calc e2) -- jeśli mam dostęp, to łatwo
+    local (insert x $ EBLam (insert x (EBVar x) env) (map untype t) e1) (calc e2)
+-- Pusta lambda różni się od samego wyrażenia tym, że
+-- wiąże statycznie wszystkie zmienne, które są w środowisku.
+-- Musimy wkleić do niej tylko argumenty z naszego.
 calc (EBLam env [] e) = local (envSubstitute env) $ calc e
 calc (EBLam env x e) = do
     env' <- ask
     return $ EBLam (envSubstitute env env') x e
+-- Aplikacja inta zgodnie z definicją języka Paweł, 
+-- overloady się bąbelkują, aplikacja lambdy to podstawienie
+-- argumentów i wykonanie ciała, aplikacja wariantu też
+-- jest zdefiniowana, ale jak na razie system typów na nią nie pozwala.
 calc (EBApp e1 e2) = do
     e1' <- calc e1
     e2' <- calc e2
@@ -90,6 +112,9 @@ calc (EBApp e1 e2) = do
 calc (EBOverload xs) = mapM calc xs >>= return . flattenExp
 calc (EBVariant x xs) = mapM calc xs >>= return . EBVariant x
 calc (EOMatch n x []) = throwError "Match error"
+-- Logika matcha została wydzielona do funkcji calcMatch,
+-- bo jest używana w dwóch miejscach. Jeśli zmienna, którą
+-- matchujemy, jest przeciążona, to bąbelkujemy przeciążenia.
 calc (EOMatch n x (CaseBound m e : t)) = do
     env <- ask
     case lookup x env of
@@ -108,6 +133,9 @@ calc (EBMatch x (CaseBound m e : t)) = do
             xv <- calc x'
             calcMatch m e x t xv
         Nothing -> return $ EBMatch x (CaseBound m e : t)
+-- Mamy dwa wyrażenia, więc trochę upierdliwie musimy
+-- rozważyć cztery przypadki przeładowań, i jeszcze trzy
+-- przypadki bycia intem.
 calc (EBArith x y (AriOp f)) = do
     x' <- calc x
     y' <- calc y
@@ -138,7 +166,7 @@ calc (EBArith x y (AriOp f)) = do
     calcF :: (Integer -> Integer -> Maybe Integer) -> Integer -> Integer -> ReaderT BEnv (Except String) ExpBound
     calcF f x y = case f x y of
         Just x -> return $ EBInt x
-        Nothing -> throwError "Arithmetic error"
+        Nothing -> throwError "Arithmetic error" -- dzielenie przez 0
 calc (EOVar pos x) = do
     env <- ask
     case lookup x env of
@@ -146,25 +174,24 @@ calc (EOVar pos x) = do
         Just (EBOverload xs) -> calc $ xs !! pos
         Just x -> return x
 
+-- Matchujemy zmienną x obliczoną jako x' ze wzorcem m, a następnie
+-- wykonujemy e, w środowisku powiększonym o zmienne
+-- związane przez matcha. Jeśli match się nie powiedzie,
+-- to przechodzimy do pozostałych case'ów t.
 calcMatch :: Match -> ExpBound -> Idt -> [MatchCaseBound] -> ExpBound -> ReaderT BEnv (Except String) ExpBound
 calcMatch m e x t x' =
     case x' of
-        EBVariant y ys -> case match y m ys of
+        EBOverload xs -> fmap flattenExp $ mapM (calcMatch m e x t) xs
+        _ -> case match m x' of
             Nothing -> calc $ EBMatch x t
             Just kvs -> local (inserts kvs) (calc e)
-        EBOverload xs -> fmap flattenExp $ mapM (calcMatch m e x t) xs
-        x'' -> case m of
-            MVar y -> local (insert y x'') (calc e)
-            _ -> return $ EBMatch x (CaseBound m e : t)
 
-match :: Idt -> Match -> [ExpBound] -> Maybe [(Idt, ExpBound)]
-match q (MVar x) l = Just [(x, EBVariant q l)]
-match q (MCons x xs) ys
-    | (length xs == length ys) && (q == x) = monadicFold (\a b -> a ++ b) [] $ zipWith match' xs ys
+-- Match jest serią podstawień. Match dla schematu
+-- zagnieżdżonego jest sumą podstawień każdego podmatcha.
+match :: Match -> ExpBound -> Maybe [(Idt, ExpBound)]
+match (MVar x) y = Just [(x, y)]
+match (MCons x xs) (EBVariant y ys)
+    | x == y && (length xs == length ys) = monadicFold (\a b -> a ++ b) [] $ zipWith match xs ys
     | otherwise = Nothing
-
-match' :: Match -> ExpBound -> Maybe [(Idt, ExpBound)]
-match' (MVar x) y = Just [(x, y)]
-match' (MCons x xs) (EBVariant y ys) = if x == y then match y (MCons x xs) ys else Nothing
-match' _ _ = Nothing
+match _ _ = Nothing
 

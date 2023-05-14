@@ -23,6 +23,8 @@ expToList :: ExpBound -> [ExpBound]
 expToList (EBOverload xs) = xs
 expToList x = [x]
 
+-- Środowiska operatorów, stałych i typów
+-- na początku wykonania programu.
 bop = []
 
 aenv = Map.fromList
@@ -49,10 +51,24 @@ atenv = Map.fromList
         (Idt "{==}", Scheme [] $ TFunc TInt (TFunc TInt TInt))
     ]
 
+-- Typ dla sumy wszystkich środowisk potrzebnych do wykonania programu.
+-- Są to po kolei środowisko wyrażeń, środowisko przypisań typowych,
+-- środowisko samych typów i środowisko operatorów. 
 type FullEnv = (BEnv, Map.Map Idt Scheme, VariantEnv, Map.Map Idt (Idt, Integer, Integer))
 emptyEnvs :: FullEnv
 emptyEnvs = (aenv, atenv, emptyEnv, Map.fromList bop)
 
+-- Funkcja licząca środowisko po wykonaniu deklaracji.
+-- Dla wyrażeń: najpierw infiksujemy operatory, zamieniamy
+-- strukturę wyrażenia na coś postaci let exp = ... in exp,
+-- zmieniamy konstruktory jednoargumentowe na MCons [] (parser
+-- przypisał im strukturę MVar), a potem jeśli jakiś argument jest
+-- otypowany, to dodajemy wyrażenie do możliwych overloadów,
+-- a jeśli nie, to przysłaniamy nim poprzednie definicje.
+-- Dalej: najpierw bindujemy przeładowane zmienne, potem
+-- nadajemy im typy, a potem liczymy wyrażenia. Musimy się
+-- troszczyć o to, żeby lista przeładowań typów odpowiadała jednoznacznie
+-- liście przeładowań wyrażeń.  
 processDecl :: FullEnv -> Decl -> Except String FullEnv
 processDecl (env, tenv, venv, ops) (DExp name tds exp) = do
     unboundUnchecked <- fmap (\infd -> ELet name tds infd (EVar name)) $ infixate exp ops
@@ -94,6 +110,10 @@ processDecl (env, tenv, venv, ops) (DExp name tds exp) = do
                           ops
                         )
 processDecl envs (DType name tvs []) = return envs
+-- Dla deklaracji typów: najpierw sprawdzamy, czy wszystkie zmienne
+-- są związane, a potem konstruujemy typy dla konstruktorów
+-- i dodajemy do środowiska funkcji oraz przypisań typowych, a do środowiska typów
+-- dodajemy przetwarzany typ.
 processDecl (env, tenv, venv, ops) (DType name tvs ((VarType vname ts) : t)) =
     if all (flip elem tvs) (Set.elems $ ftv $ TVariant vname ts)
         then
@@ -119,6 +139,7 @@ ppConses [] = ""
 ppConses ((name, scheme) : t) =
     show name ++ " of " ++ show scheme ++ "\n" ++ ppConses t
 
+-- Funkcja przetwarza deklarację oraz wypisuje komunikat dla użytkownika. 
 processDeclIO :: FullEnv -> Decl -> ExceptT String IO FullEnv
 processDeclIO envs x =
     let declEnvs = processDecl envs x
@@ -149,6 +170,11 @@ doesExprEnd ";;" = True
 doesExprEnd (x : y : xs) = doesExprEnd (y : xs)
 doesExprEnd _ = False
 
+-- Jeśli program wywołamy z argumentami, to wczytujemy pliki
+-- podane w argumentach i wykonujemy je po kolei. Plikiem
+-- może być też stdin. Jeśli nie podamy argumentów, to
+-- uruchamiamy toplevel. Błąd w pliku skutkuje przerwaniem
+-- wykonania programu, błąd w toplevelu tylko komunikatem.
 main :: IO ()
 main = 
     let mainloop envs = do

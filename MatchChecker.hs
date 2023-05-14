@@ -6,6 +6,9 @@ import Control.Monad.Reader
 import Data.Map hiding (filter, foldl, map)
 import Prelude hiding (lookup)
 
+-- W tym pliku będzie sprawdzanie kompletności wzorców.
+-- Jak na razie jest tutaj tylko reszta obsługi środowiska typów.
+
 type VariantEnv = (Map Idt Scheme, Map Idt [Idt])
 insertCons :: Idt -> Scheme -> VariantEnv -> VariantEnv
 insertCons name t@(Scheme _ (TVariant tname _)) (a, b) = (insert name t a, insertWith (++) tname [name] b)
@@ -18,6 +21,10 @@ getConses name (_, b) = case lookup name b of
 emptyEnv :: VariantEnv
 emptyEnv = (empty, empty)
 
+-- Funkcja, która sprawdza, czy dana zmienna jest tak naprawdę
+-- konstruktorem wariantu (w przeciwieństwie do Haskella i OCamla 
+-- nie ma tutaj rozróżnienia składniowego), więc trzeba to robić
+-- na bieżąco.
 bindZeroargMatches :: Exp -> (VariantEnv, Map Idt Scheme) -> Except String Exp
 bindZeroargMatches (EVar x) e = return $ EVar x
 bindZeroargMatches (EInt x) e = return $ EInt x

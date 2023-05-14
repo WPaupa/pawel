@@ -23,7 +23,8 @@ nameM (MVar x) = return x
 nameM _ = throwError "Match without a constructor or unbound infix operator"
 
 first (x, _, _) = x
-
+-- Funkcja infixate po prostu zchodzi do
+-- EUnparsed i to przekształca, tak samo infixateMatch.
 infixate :: Exp -> OpEnv -> Except String Exp
 infixate (EUnparsed es) ops = infixateOps es ops
 infixate (EApp e1 e2) ops = do
@@ -63,6 +64,8 @@ infixateMatch (MCons x ms) ops = fmap (MCons x) (mapM (flip infixateMatch ops) m
 
 infixateOps :: [Exp] -> OpEnv -> Except String Exp
 infixateOps [] ops = throwError "Empty expression"
+-- Tutaj moglibyśmy nie zwracać błedu i zezwolić na slice, ale deklaracja tego nie przewiduje
+-- i tworzą się problemy z rzeczami typu a + + b (czy to jest (a +) + b czy a + (+ b)?)
 infixateOps [e] ops = if isOp e ops then throwError "operator without arguments" else infixate e ops
 infixateOps [e1, e2] ops =
     if isOp e1 ops || isOp e2 ops
@@ -71,6 +74,7 @@ infixateOps [e1, e2] ops =
             e1' <- infixate e1 ops
             e2' <- infixate e2 ops
             return $ EApp e1' e2'
+-- Jeśli mamy wyrażenie postaci e1 op e2, to wiemy, co z nim robić
 infixateOps [e1, e2, e3] ops =
     if isOp e2 ops
         then do
@@ -81,6 +85,8 @@ infixateOps [e1, e2, e3] ops =
         else do
             e12' <- infixateOps [e1, e2] ops
             infixateOps [e12', e3] ops
+-- e1 op e2 e3 parsujemy jako {op} e1 (e2 e3), a
+-- pozostałe przypadki tak samo jak dla 3 argumentów
 infixateOps [e1, e2, e3, e4] ops =
     if isOp e2 ops
         then do
@@ -91,6 +97,11 @@ infixateOps [e1, e2, e3, e4] ops =
         else do
             e12' <- infixateOps [e1, e2] ops
             infixateOps [e12', e3, e4] ops
+-- Mamy tutaj opcję e1 op e2 op reszta, którą
+-- parsujemy zgodnie z precedencją, oraz
+-- e1 op reszta, którą parsujemy jako {op} e1 reszta
+-- i e1 e2 e3 op reszta, którą parsujemy jako {op} (e1 e2 e3) reszta.
+-- Wpp na pewno aplikujemy e1 e2, a resztą zajmujemy się rekurencyjnie.
 infixateOps (e1 : e2 : e3 : e4 : es) ops =
     if isOp e2 ops && isOp e4 ops
         then do
@@ -123,6 +134,12 @@ infixateOps (e1 : e2 : e3 : e4 : es) ops =
             e12' <- infixateOps [e1, e2] ops
             infixateOps (e12' : e3 : e4 : es) ops
 
+-- Zgodnie z deklaracją infiksowanie operatorów w matchu
+-- jest prostsze: albo mamy operator, który parsuje
+-- się od lewej do prawej, więc jesteśmy w przypadku
+-- e1 op reszta, albo nie mamy operatora na drugiej
+-- pozycji i automatycznie traktujemy całość jak 
+-- z konstruktorem na pierwszej pozycji.
 infixateMatchOps :: [Match] -> OpEnv -> Except String Match
 infixateMatchOps [] ops = throwError "Empty match"
 infixateMatchOps [m] ops = if isOpM m ops then throwError "operator without arguments" else infixateMatch m ops

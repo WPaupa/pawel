@@ -10,6 +10,9 @@ import Prelude hiding (lookup)
 inserts :: (Ord a) => [(a, b)] -> Map a b -> Map a b
 inserts kvs m = foldl (\m (k, v) -> insert k v m) m kvs
 
+-- Funkcja bubble bierze listę może przeciążonych
+-- wyrażeń i zwraca przeciążone wyrażenie, które
+-- jest ich sumą. Przy okazji wykonuje to wewnątrz monady.
 bubble' :: [Reader BEnv ExpBound] -> Reader BEnv [ExpBound]
 bubble' [] = return []
 bubble' (h : t) = do
@@ -19,6 +22,11 @@ bubble' (h : t) = do
         EBOverload es -> return $ es ++ t'
         _ -> return $ h' : t'
 
+-- Dla wygody programisty pojedyncze overloady są traktowane
+-- jak wyrażenia nieprzeładowane. Na takie ułatwienie
+-- możemy sobie jednak pozwolić tylko na tym poziomie,
+-- żeby nie nadać przypadkiem przeładowanemu wyrażeniu
+-- nieprzeładowanego typu i vice versa.
 bubble :: [Reader BEnv ExpBound] -> Reader BEnv ExpBound
 bubble hs = do
     hs' <- bubble' hs
@@ -27,6 +35,11 @@ bubble hs = do
         [h] -> return h
         _ -> return $ EBOverload hs'
 
+-- Funkcja bind przeciąża wyrażenie w taki sposób,
+-- żeby każde wystąpienie zmiennej przeładowanej miało przypisany
+-- sobie numer przeładowania, do którego się odwołuje.
+-- Robi to w ten sposób, żeby przeciążenie występowało tylko
+-- na najwyższym poziomie, więc cały czas bąbelkuje przeładowania w górę.
 bind :: Exp -> Reader BEnv ExpBound
 bind (EVar x) = do
     env <- ask
@@ -79,6 +92,8 @@ bind (ELam xs e) = do
         EBOverload es -> return $ EBOverload $ map (\e -> EBLam env xs e) es
         _ -> return $ EBLam env xs e'
 bind (EMatch x mcs) =
+    -- Osobno musimy zbindować każdy match, i potem
+    -- zbąbelkować wszystkie możliwe kombinacje.
     let bindMatch (MVar x) = insert x (EBVar x)
         bindMatch (MCons x []) = id
         bindMatch (MCons x (h : t)) = bindMatch h . bindMatch (MCons x t)
@@ -101,9 +116,13 @@ bind (EMatch x mcs) =
      in do
         env <- ask
         case lookup x env of
+            -- Mamy dwa przypadki, dla przeciążonej i nieprzeciążonej zmiennej
             Just (EBOverload xs) -> bubble $ map (\y -> bindMCs (EOMatch y x) mcs) [0 .. (length xs - 1)]
             _ -> bindMCs (EBMatch x) mcs
 
+-- Funkcja addOverloadNumber dodaje numer przeciążenia do zmiennej o danej nazwie.
+-- Bierze pod uwagę to, że zmienne mogą być przysłaniane.
+-- Poza tą subtelnością po prostu bąbelkuje.
 addOverloadNumber :: Idt -> Int -> ExpBound -> ExpBound
 addOverloadNumber name n (EBVar name') = if name == name' then EOVar n name else EBVar name'
 addOverloadNumber name n (EBVariant name' xs) = EBVariant name' $ map (addOverloadNumber name n) xs
@@ -123,10 +142,18 @@ addOverloadNumber name n (EBApp e1 e2) = EBApp (addOverloadNumber name n e1) (ad
 addOverloadNumber name n (EBArith e1 e2 op) = EBArith (addOverloadNumber name n e1) (addOverloadNumber name n e2) op
 addOverloadNumber name n x = x
 
+-- Funkcja makeOverloadsRecurrent wiąże każde przeciążenie samo ze sobą.
+-- Innymi słowy w każdym przeciążeniu zapewnia, że odwołanie rekurencyjne
+-- będzie odwoływało się do tego samego przeciążenia.
 makeOverloadsRecurrent :: Int -> Idt -> ExpBound -> ExpBound
 makeOverloadsRecurrent startN name (EBOverload xs) =
     EBOverload $ map (\(x, n) -> addOverloadNumber name n x) (zip xs [startN ..])
 makeOverloadsRecurrent startN name x = addOverloadNumber name startN x
 
+-- Funkcja bindRecurrent wiąże identyfikatory, możliwe, że rekurencyjne.
+-- Jest mocniejsza niż to, co potrzebujemy, bo nasze wyrażenia są zawsze postaci
+-- let f = ... in f, więc nie muszą być na najwyższym poziomie rekurencyjnie.
+-- Nie przeszkadza nam to jednak, zresztą przy obliczeniu i tak ten let spada
+-- i wiązanie wchodzi w środowisko lambdy. Funkcja zostaje w tej formie dla ogólności.
 bindRecurrent :: Exp -> Idt -> BEnv -> ExpBound
 bindRecurrent x fname env = runReader (bind x) (insert fname (EBVar fname) env)

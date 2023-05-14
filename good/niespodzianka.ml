@@ -1,6 +1,6 @@
 -- Ten plik zawiera odwołania do większości pozostałych,
 -- więc proszę o przeczytanie go na samym końcu.
--- użycie: ./Conn good/regularAri.ml good/Prelude.ml good/monads.ml good/String.ml good/Set.ml good/Data.ml
+-- użycie: ./Conn good/regularAri.ml good/Prelude.ml good/monads.ml good/String.ml good/Set.ml good/Data.ml good/niespodzianka.ml
 
 -- *******************
 -- *******************
@@ -42,9 +42,9 @@ let return a = Reader (λ_ . a);;
 let evalM expr = match expr with
     EInt a => return $ EInt a
     | EVar name => ask >>= (λenv. let q = lookup name env in match q with
-        Just q' => evalM q'
-        | Nothing => return $ EVar name
-    )
+            Just q' => evalM q'
+            | Nothing => return $ EVar name
+        )
     | EApp e1 e2 => (evalM e1) >>= (λe1'. match e1' with
             ELam name expr => (evalM e2) >>= (λe2'. local (insertMap name e2') $ evalM expr)
             | x => return $ EApp e1' e2

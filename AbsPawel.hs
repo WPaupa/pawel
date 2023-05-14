@@ -68,6 +68,8 @@ data ExpBound
 
 type BEnv = Map Idt ExpBound
 
+-- To jest hackowate, ale i tak
+-- używamy tylko do wypisywania, dla naszej wygody
 newtype AriOp = AriOp (Integer -> Integer -> Maybe Integer)
 instance Show AriOp where
     show (AriOp f) = case f 15 4 of
@@ -105,6 +107,8 @@ ari f = EBLam empty [Idt "x", Idt "y"] $ EBArith (EBVar $ Idt "x") (EBVar $ Idt 
 data MatchCaseBound = CaseBound Match ExpBound | CaseBoundOverload [MatchCaseBound]
     deriving (Eq, Ord, Show, Read)
 
+
+-- Dalej już tylko pretty-printing
 instance Show ExpBound where
     showsPrec _ x = shows (prExp x)
 
