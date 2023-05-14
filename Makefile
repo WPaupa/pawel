@@ -1,9 +1,9 @@
 .PHONY: all clean
 
-all: Conn
+all: interpreter
 
-Conn: AbsPawel.hs LexPawel.hs MatchChecker.hs Inference.hs OpParser.hs Binder.hs Calc.hs ParPawel.hs Conn.hs
-	ghc --make Conn.hs
+interpreter: AbsPawel.hs LexPawel.hs MatchChecker.hs Inference.hs OpParser.hs Binder.hs Calc.hs ParPawel.hs interpreter.hs
+	ghc --make interpreter.hs
 
 clean:
-	rm -f *.o *.hi Conn
+	rm -f *.o *.hi interpreter

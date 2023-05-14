@@ -1,5 +1,5 @@
--- użycie: ./Conn good/regularAri.ml good/Prelude.ml good/monads.ml
--- lub ./Conn good/overloadAri.ml good/Prelude.ml good/monads.ml
+-- użycie: ./interpreter good/regularAri.ml good/Prelude.ml good/monads.ml
+-- lub ./interpreter good/overloadAri.ml good/Prelude.ml good/monads.ml
 
 op left 1 >>= = {>>=};;
 op left 1 >> = {>>};;

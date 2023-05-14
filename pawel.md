@@ -1,5 +1,5 @@
 # Język Paweł
-Paweł jest czystym językiem funkcyjnym z (prawie)statyczną kontrolą typów. Jego składnia bazowana jest na składni języka OCaml.
+Paweł jest czystym językiem funkcyjnym ze statyczną kontrolą typów. Jego składnia bazowana jest na składni języka OCaml i częściowo Haskell.
 ## Podstawowa składnia
 Program w języku Paweł jest serią deklaracji postaci:
 - `let nazwa [argumenty] = wyrażenie`
@@ -7,13 +7,13 @@ Program w języku Paweł jest serią deklaracji postaci:
 - `op left/right nazwa priorytet = konstruktor / nazwa procedury`
 
 Ostatnia z tych konstrukcji jest definicją nowego infiksowego operatora dwuargumentowego.
-Pierwsza z tych konstrukcji działa w trakcie wykonania i modyfikuje środowisko, natomiast druga i trzecia działają przed wykonaniem (w szczególności oznacza to, że język nie pozwala na typy zależne od wartości wyrażenia jak w λP, a operatory są tak naprawdę tylko aliasami dla funkcji lub konstruktorów). W przeciwieństwie do OCamla, konstrukcja `let` pozwala na rekurencję.
+Wszystkie te konstrukcje działają w czasie wykonania, z normalnymi zasadami przesłaniania (z wyjątkiem przeładowań, dodanie nowego przeładowania nie przysłania starych, więcej o tym później). W przeciwieństwie do OCamla, konstrukcja `let` pozwala na rekurencję.
 ### Wyrażenia
 Wyrażenia są następującej postaci:
 ```
 Exp ::= Exp Exp | Exp Op Exp | let nazwa [argumenty] = Exp in Exp | λ [argumenty] . Exp | match nazwa with [Case] | if Exp then Exp else Exp
 ```
-Gdzie Op jest jednym ze zdefiniowanych w preprocessingu operatorów lub operatorem +, -, *, /. 
+Gdzie Op jest jednym ze zdefiniowanych w języku operatorów. 
 Większość tych konstrukcji jest oczywista, pozostaje wyjaśnić składnię `Case`:
 ```
 Case ::= Match => Exp
@@ -21,7 +21,7 @@ Match ::= _ | nazwa zmiennej | konstruktor ( [Match] )
 ```
 Jako że operatory definiowane w kodzie są tylko aliasami na konstruktory, to można ich używać w matchach. 
 ### Typy wariantowe
-Typy wariantowe (algebraiczne) są standardowe, jak w OCamlu. Mogą być rekurencyjne, przykład:
+Typy wariantowe (algebraiczne) są standardowe, jak w Haskellu. Mogą być rekurencyjne, przykład:
 ```
 type List of a = Empty | Cons a (List of a);;
 ```
@@ -59,7 +59,7 @@ let i (x : Int) (y : Bool) (z : Bool) = h (h x y) z;;
 let i (x : Int) (y : Bool) (z : Int) = h (h x y) z;;
 itd.
 ```
-Kolejność generowanych przeładowań jest zgodna z kolejnością przeładowań używanych wewnętrznie funkcji, i idzie "od lewej", czyli najpierw generuje wszystkie przeładowania dla pierwszego wariantu najbardziej lewej funkcji, potem drugiego itd. Funkcje przeładowane mogą być rekurencyjne, ale przy wywołaniu rekurencyjnym widoczne jest tylko obecne przeładowanie oraz przeładowania zdefiniowane wcześniej. Przeładowana funkcja rekurencyjna dokładnie tak samo jest definiowana w kilku wersjach, przy czym jedna z wersji jest rekurencyjna. Na przykład:
+Kolejność generowanych przeładowań jest zgodna z kolejnością przeładowań używanych wewnętrznie funkcji, i idzie "od lewej", czyli najpierw generuje wszystkie przeładowania dla pierwszego wariantu najbardziej lewej funkcji, potem drugiego itd. Funkcje przeładowane mogą być rekurencyjne, ale przy wywołaniu rekurencyjnym widoczne jest tylko obecne przeładowanie. Przeładowana funkcja rekurencyjna dokładnie tak samo jest definiowana w kilku wersjach. Na przykład poniższy kod jest błędny:
 ```
 op right 5 ,, = ConsP;;
 let piecewiseAdd (x : Int) (y : Int) = x + y;;
@@ -68,12 +68,15 @@ let piecewiseAdd (x : List of Int) (y : List of Int) = let z = x ,, y in
         (h1, t1) ,, (h2, t2) => (piecewiseAdd h1 h2) , (piecewiseAdd t1 t2)
         | _ => Empty;;
 ```
-W programie stworzy dwa warianty funkcji `piecewiseAdd`, pierwszy trywialny, a drugi wołający i pierwszy i rekurencyjnie siebie samego.
+Natomiast gdyby zastąpić `piecewiseAdd h1 h2` przez `h1 + h2`, otrzymamy poprawny kod.
 ## Aplikacja
 W Pawle po lewej stronie aplikacji może stać dowolne wyrażenie. 
 - Jeśli to wyrażenie wylicza się do funkcji, to jako semantyka aplikacji zostanie wykonana standardowa $\beta$-redukcja (tak jak w każdym innym języku)
 - Jeśli to wyrażenie wylicza się do wartości `n` typu Int, to zostanie potraktowane jako funkcja typu $\forall\alpha.~(\alpha\to\alpha)\to(\alpha\to\alpha)$, która każdej funkcji `f` typu `a->a` przypisuje `n`-krotne złożenie funkcji `f` ze samą sobą (czyli `n` zostanie potraktowane jak liczebnik Churcha)
-- Jeśli to wyrażenie wylicza się do typu wariantowego o konstruktorze `Cons a1 a2 ...`, to zostanie potraktowane jak funkcja, która każdemu argumentowi `f` przyporządkowuje wyrażenie o tym samym konstruktorze, postaci `Cons (a1 f) (a2 f) ...`. Innymi słowy, aplikacja typów wariantowych o argumentach będących funkcjami jest aplikacją tych funkcji.
+- Jeśli to wyrażenie wylicza się do typu wariantowego o konstruktorze `Cons a1 a2 ...`, to zostanie potraktowane jak funkcja, która każdemu argumentowi `f` przyporządkowuje wyrażenie o tym samym konstruktorze, postaci `Cons (a1 f) (a2 f) ...`. Innymi słowy, aplikacja typów wariantowych o argumentach będących funkcjami jest aplikacją tych funkcji. To zachowanie jest obecnie wspierane
+przez funkcję wykonującą, ale nie przez system typów. Dzieje się tak, żeby nie powstawało
+za dużo przeładowań prostych funkcji. W przyszłych wersjach Pawła tę funkcję będzie można
+włączyć lub wyłączyć za pomocą argumentu wykonania.
 Przykłady:
 ```
 let dziesiec = (λ x . x * 2) 5;;
@@ -95,32 +98,15 @@ Wartość `dziesiec` wyliczy się do dziesięciu, wartość `trzydziesci_dwa` do
 ```
 W tym kodzie widać również przykład tego, jak można użyć konstrukcji `op` do zdefiniowania lukru syntaktycznego na listach zupełnie z poziomu języka.
 ### Konsekwencje aplikacji
-Argumenty konstruktora aplikowanego typu wariantowego muszą być odpowiedniego typu. Na przykład w kodzie:
-```
-type Pair of a b = ConsP a b;;
-let g = ConsP (λ x . 1) (λ x . x 1);;
-let gf f = g f;;
-```
-`g` się otypuje poprawnie, ale `gf` już nie. Oznacza to, że pomimo tego, że wszystko jest w Pawle traktowane jako funkcja, to i tak nie ma poprawności $\eta$-redukcji.
+Liczby naturalne są traktowane, jakby były typu $\alpha.(\alpha\to\alpha)\to(\alpha\to\alpha)$ (monomorficznego!), w szczególności nie mogą być zaaplikowane do siebie samych. Ponadto system typów dla dobra programisty zabrania aplikowania liczb do funkcji z i do liczb, żeby nie tworzyło się za dużo przeładowań (w szczególności żeby typy `a->Int` oraz `Int` były odróżnialne).
 
-Liczby naturalne są traktowane, jakby były typu $\forall \alpha.(\alpha\to\alpha)\to(\alpha\to\alpha)$, więc w szczególności mogą być zaaplikowane do siebie samych. Wartością termu `n m` jest liczba $m^n$, a to obliczenie jest wspierane z poziomu interpretera, więc potęga tym sposobem jest liczona szybko. Ponadto liczby można aplikować do typów wariantowych, a typy wariantowe do liczb, otrzymując przewidywalne wyniki:
-```
-2 ([a, b, c, ]) x = ([a, b, c, ]) (([a, b, c, ]) x)
-([a, b, c, ]) 2 = [a 2, b 2, c 2, ]
-```
-Najciekawszą konsekwencją aplikacji dla list jest fakt, że z listy możemy łatwo stworzyć obiekt, który przyporządkowuje funkcji jej aplikację na wszystkich elementach tej listy. Innymi słowy:
-```
-map list = match list with Empty => Empty | h, t => (λ x . h x) , (map t);;
-```
-daje funkcję `map list function` znaną z innych języków.
-
-Te reguły dla aplikacji nie sprawiają jednak, że typ `Int` jest traktowany dokładnie tak samo, jak typ `(a->a)->(a->a)`. To traktowanie jest jednostronne, czyli gdy funkcji, która wymaga argumentu typu `Int`, zostanie dany arugment typu `(a->a)->(a->a)`, dostaniemy błąd typów, ale gdy funkcji, która wymaga argumentu typu `(a->a)->(a->a)`, zostanie dany argument typu `Int`, błędu typów już nie będzie. Tak się dzieje dlatego, że pomimo tego, że wyrażalne w języku wyrażenia tych typów są takie same, to są one traktowane jak różne obiekty. Rozważane jest rozszerzenie do języka, w którym ta subtelność jest usunięta.
+Typ `Int` jest traktowany w większości pozostałych przypadków dokładnie tak samo, jak typ `(a->a)->(a->a)`. Gdy funkcji, która wymaga argumentu typu `Int`, zostanie dany arugment typu `(a->a)->(a->a)`, dostaniemy poprawnie typujące się wyrażenie, w którym funkcji zostanie przypisana wartość inta (odpowiednie twierdzenia z rachunku lambda gwarantują nam, że każda funkcja tego typu jest odpowiednikiem inta).
 ## Instrukcje warunkowe
-Wyrażenie `if e1 then e2 else e3` jest de facto aliasem na funkcję `ifte e1 (λ _ . e2) (λ _ . e3)`. Funkcja `ifte` jest przeładowana dla argumentów `e1` typu `Int`, ale można ją dodatkowo przeładowywać dla wybranych przez siebie argumentów. Mamy, że `ifte x` jest funkcją `λ x y . x Force`, gdzie `Force` jest dowolnym wyrazem, gdy x jest niezerowe oraz funkcją `λ x y . y Force`, gdy x jest zerowe.
+Wyrażenie `if e1 then e2 else e3` wykonuje najpierw `e1`, a potem w zależności od tego, czy wyliczy się do niezerowej wartości czy zera, `e2` lub `e3` (w szczególności jeśli `e1` nie jest prawdą, to wykonanie nigdy nie wejdzie do `e2`, podobnie jak przy lambdach). Pod ifem musi być Int, nie tylko moralnie, ale także literalnie.
 
 Do porównywania obiektów typu `Int` istnieją operatory `==`, `>`, `>=`, `<=` i `<`, wyliczające się do 1 lub 0 w standardowy sposób.
 ## Działania arytmetyczne
-Działania arytmetyczne +, *, - i / są domyślnie przeładowane dla typu `Int` w standardowy sposób, ale można je przeładować dla dowolnych typów. Składniowo te działania są operatorowymi aliasami dla funkcji `{+}`, `*`, `{-}` i `{/}` z priorytetami jak w Haskellu. 
+Działania arytmetyczne +, *, - i / są domyślnie przeładowane dla typu `Int` w standardowy sposób, ale można je przeładować dla dowolnych typów. Składniowo te działania są zdefiniowanymi w języku operatorowymi aliasami dla funkcji `{+}`, `*`, `{-}` i `{/}` z priorytetami jak w Haskellu. 
 ### Kolejność wykonywania działań
 Bazowo ciąg aplikacji jest parsowany jako lista, w której potem operatory są zamieniane syntaktycznie na funkcje zgodnie z precedencją. Na przykład funkcja `h` w kodzie:
 ```
@@ -186,7 +172,10 @@ _     . Match1 ::= "(" Match ")";
 TDVar  . TypeDecl ::= Idt;
 TDType . TypeDecl ::= "(" Idt ":" Type ")";
 
-token Idt (((letter | '_' | '\'' | '{' | '}') (letter | '_' | '\'' | '{' | '}' | digit) *) | ('[' | ']' | '_' | '\'' | '*' | '+' | '/' | '-' | '{' | '}' | '|' | '$' | '>' | '=' | '<' | ',' | '?' | ':' | '.' | '!')+);
+token Idt (((letter | '_' | '\'' | '{' | '}') (letter | '_' | '\'' | '{' | '}' | digit) *) | ('[' | ']' | '_' | '\'' | '*' | '+' | '/' | '-' | '{' | '}' | '|' | '$' | '>' | '=' | '<' | ',' | '?' | ':' | '.' | '!' | '&')+);
+
+comment "--" ;
+comment "(*" "*)" ;
 
 terminator Decl ";;";
 separator Variant "|";
@@ -209,8 +198,8 @@ Priorytetyzacja shift nad reduce w poprawny sposób sprawia, że listy nie są k
 ```
 let id x = x;;
 let multiply n m = n * m;;
-let {*} (x : Int -> Int) (y : Int) = λ a . (x a) * y;;
-let {+} (x : Int -> Int) (y : Int) = λ a . (x a) + y;;
+let {*} (x : a -> Int) (y : Int) = λ a . (x a) * y;;
+let {+} (x : a -> Int) (y : Int) = λ a . (x a) + y;;
 
 let power1 n m = if m then n * (power n (m - 1)) else 1;;
 let power2 n m = m (multiply n) 1;;
@@ -224,7 +213,7 @@ Jako że wiązanie przeładowań funkcji jest statyczne, to rekurencyjna funkcja
 let {*} (x : a -> b) (y : a -> b) = λ a . (x a) * (y a);;
 let e = (λ x y . 5) * (λ x y . 3);;
 ```
-Bo w wyrażeniu `e` zostanie dopasowane napisane wyżej przeładowanie funkcji `*`, w którym natomiast znowu zostanie dopasowane ono samo (rekurencyjnie). Taka rekurencja nie ma warunku początkowego, bo funkcja `{*}` napisana w kodzie jest związana ze samą sobą, więc nie może być związana z mnożeniem obiektów typu `Int`. Poprawnym przykładem rekurencyjnego przeładowania jest funkcja `piecewiseAdd` z rozdziału Przeładowywanie.
+Bo w wyrażeniu `e` zostanie dopasowane napisane wyżej przeładowanie funkcji `*`, w którym natomiast znowu zostanie dopasowane ono samo (rekurencyjnie). Taka rekurencja nie ma warunku początkowego, bo funkcja `{*}` napisana w kodzie jest związana ze samą sobą, więc nie może być związana z mnożeniem obiektów typu `Int`. Z tego powodu w języku są definiowane nowe funkcje `[+]`, bazowo przeładowane, do których potem jest przypisany operator.
 ### Silnia
 Silnię oczywiście można napisać tak jak w OCamlu, ale niżej przedstawiono bardziej Pawłowy sposób pisania silni.
 ```
@@ -237,9 +226,13 @@ op right 0 $ = {$};;
 
 let pairFunctions f g = λ x . (f x) ,, (g x);;
 
-let factorial n = snd $ n (pairFunctions (id + 1) (foldp {*})) (0 ,, 1);;
+let factorial n = snd $ n (pairFunctions (fst + 1) (foldp {*})) (0 ,, 1);;
 ```
 ## Kod
 Kod prezentowany w tym dokumencie nie korzysta z założeń istnienia wcześniejszych bibliotek, ale niektóre fragmenty korzystają z funkcji, przeładowań i operatorów zdefiniowanych w poprzednich fragmentach. W języku Paweł planowana jest biblioteka standardowa, do której będą należeć niektóre ze zdefiniowanych w tym dokumencie funkcji.
+### Tabelka 
+Cechy od 1 do 16 zostały zrealizowane, natomiast cecha 17 (sprawdzanie kompletności matcha) - jeszcze nie.
 ### Oczekiwane punkty
 36
+## Użycie
+Pawła można używać z konsoli poprzez `./interpreter` lub z pliku (lub plików) poprzez `./interpreter pliki`. Przykłady w folderze `good` często korzystają z rzeczy zadeklarowanych w innych plikach, w takim wypadku na górze pliku zapisano poprawne użycie. Oprócz tego jako jeden (lub kilka) z plików można podać `stdin`, wtedy wejście w danym momencie zamiast pliku jest brane z konsoli.

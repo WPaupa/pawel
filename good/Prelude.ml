@@ -1,5 +1,5 @@
--- użycie: ./Conn good/regularAri.ml good/Prelude.ml
--- lub ./Conn good/overloadAri.ml good/Prelude.ml
+-- użycie: ./interpreter good/regularAri.ml good/Prelude.ml
+-- lub ./interpreter good/overloadAri.ml good/Prelude.ml
 
 op right 0 $  = {$};;
 op right 2 || = {||};;

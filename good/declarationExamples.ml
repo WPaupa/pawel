@@ -1,5 +1,5 @@
 -- Przykłady z deklaracji języka
--- użycie: ./Conn good/overloadAri.ml good/Prelude.ml good/declarationExamples.ml
+-- użycie: ./interpreter good/overloadAri.ml good/Prelude.ml good/declarationExamples.ml
 
 let K x y = x;;
 

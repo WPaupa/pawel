@@ -1,5 +1,5 @@
--- użycie: ./Conn good/regularAri.ml good/Prelude.ml good/Data.ml
--- lub ./Conn good/overloadAri.ml good/Prelude.ml good/Data.ml
+-- użycie: ./interpreter good/regularAri.ml good/Prelude.ml good/Data.ml
+-- lub ./interpreter good/overloadAri.ml good/Prelude.ml good/Data.ml
 
 type Stack of a = Stack (List of a);;
 let push a (s:Stack of a) = match s with Stack l => Stack (a, l);;

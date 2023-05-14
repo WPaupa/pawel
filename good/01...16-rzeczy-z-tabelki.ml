@@ -1,4 +1,4 @@
--- użycie: ./Conn good/regularAri.ml good/Prelude.ml good/01...16-rzeczy-z-tabelki.ml
+-- użycie: ./interpreter good/regularAri.ml good/Prelude.ml good/01...16-rzeczy-z-tabelki.ml
 -- Polecam co do zasady odpalać Pawła za pomocą ledit ./Conn [pliki] stdin
 
 -- Przykłady na każdy z punktów z tabelki.
